@@ -1,0 +1,257 @@
+"""
+Sample weather alert module for TGAI-Bennet.
+This module checks weather forecasts and alerts when rain is expected tomorrow.
+"""
+
+import aiohttp
+import json
+from datetime import datetime, timedelta
+from typing import Dict, Any, Optional
+
+from src.modules.base_module import BaseModule, ModuleTrigger, TriggerConfig
+from src.utils.telegram_formatter import TelegramFormatter
+
+
+class WeatherAlertModule(BaseModule):
+    """
+    Weather alert module that monitors weather forecasts and alerts on rain.
+    
+    This is a sample implementation of a time-triggered module that demonstrates:
+    - Fetching data from an external API
+    - Processing response data
+    - Using LLM for intelligent message generation
+    - Sending formatted Telegram alerts
+    - Managing module state
+    """
+    
+    def __init__(self, bot_instance, config):
+        super().__init__(bot_instance, config)
+        
+        # Module metadata
+        self.description = "Monitors weather forecasts and alerts when rain is expected tomorrow"
+        self.author = "TGAI-Bennet Sample Module"
+        self.version = "1.0.0"
+        
+        # Set as time-based trigger, running every 6 hours
+        self.trigger = TriggerConfig(
+            ModuleTrigger.TIME,
+            interval=21600  # 6 hours in seconds
+        )
+        
+        # Module-specific configuration
+        self.api_key = None
+        self.location = None
+        self.alert_threshold = 50  # Send alert if chance of rain > 50%
+        
+        # Module state
+        self.state = {
+            'last_check': None,
+            'last_alert_sent': None,
+            'consecutive_rainy_days': 0
+        }
+    
+    async def initialize(self) -> None:
+        """Initialize the weather alert module."""
+        self.log_info("Initializing Weather Alert Module")
+        
+        # Load configuration
+        self.api_key = self.get_config('api_key', '')
+        self.location = self.get_config('location', 'London,UK')
+        self.alert_threshold = self.get_config('alert_threshold', 50)
+        
+        # Validate configuration
+        if not self.api_key:
+            self.log_warning("No API key configured. Using mock data for demonstration.")
+        
+        self.log_info(f"Module configured for location: {self.location}")
+    
+    async def run(self) -> None:
+        """Main execution method that runs periodically."""
+        self.log_info("Running weather check")
+        
+        try:
+            # Get weather forecast
+            forecast = await self._get_weather_forecast()
+            
+            if not forecast:
+                self.log_error("Failed to get weather forecast")
+                return
+            
+            # Check tomorrow's weather
+            tomorrow = datetime.now() + timedelta(days=1)
+            tomorrow_str = tomorrow.strftime('%Y-%m-%d')
+            
+            rain_probability = forecast.get('daily', {}).get(tomorrow_str, {}).get('rain_probability', 0)
+            weather_description = forecast.get('daily', {}).get(tomorrow_str, {}).get('description', 'Unknown')
+            
+            # Update state
+            self.state['last_check'] = datetime.now().isoformat()
+            
+            # Check if we should send an alert
+            if rain_probability > self.alert_threshold:
+                self.log_info(f"Rain alert triggered: {rain_probability}% chance of rain tomorrow")
+                
+                # Check if we already sent an alert today
+                last_alert = self.state.get('last_alert_sent')
+                if last_alert:
+                    last_alert_date = datetime.fromisoformat(last_alert).date()
+                    if last_alert_date == datetime.now().date():
+                        self.log_info("Alert already sent today, skipping")
+                        return
+                
+                # Generate alert message using LLM
+                alert_message = await self._generate_alert_message(
+                    rain_probability, 
+                    weather_description,
+                    self.state.get('consecutive_rainy_days', 0)
+                )
+                
+                # Send alert
+                if await self.send_telegram_message(alert_message):
+                    self.state['last_alert_sent'] = datetime.now().isoformat()
+                    self.state['consecutive_rainy_days'] = self.state.get('consecutive_rainy_days', 0) + 1
+                else:
+                    self.log_error("Failed to send Telegram alert")
+            else:
+                self.log_info(f"No rain alert: {rain_probability}% chance of rain tomorrow")
+                self.state['consecutive_rainy_days'] = 0
+            
+        except Exception as e:
+            self.log_error(f"Error in weather alert module: {str(e)}", e)
+    
+    async def cleanup(self) -> None:
+        """Clean up resources used by the module."""
+        self.log_info("Cleaning up Weather Alert Module")
+        # No specific cleanup needed for this module
+    
+    async def _get_weather_forecast(self) -> Optional[Dict[str, Any]]:
+        """
+        Fetch weather forecast from API.
+        
+        Returns:
+            Optional[Dict]: Weather forecast data or None if failed
+        """
+        if not self.api_key:
+            # Return mock data for demonstration
+            return self._get_mock_forecast()
+        
+        try:
+            # Example API call structure (replace with actual weather API)
+            url = f"https://api.weatherservice.com/forecast"
+            params = {
+                'location': self.location,
+                'days': 2,
+                'key': self.api_key
+            }
+            
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, params=params) as response:
+                    if response.status == 200:
+                        return await response.json()
+                    else:
+                        self.log_error(f"Weather API returned status {response.status}")
+                        return None
+                    
+        except Exception as e:
+            self.log_error(f"Error fetching weather data: {str(e)}", e)
+            return None
+    
+    def _get_mock_forecast(self) -> Dict[str, Any]:
+        """Generate mock weather forecast for demonstration."""
+        tomorrow = datetime.now() + timedelta(days=1)
+        tomorrow_str = tomorrow.strftime('%Y-%m-%d')
+        
+        # Simulate 60% chance of rain for demonstration
+        return {
+            'daily': {
+                tomorrow_str: {
+                    'rain_probability': 60,
+                    'description': 'Light rain expected in the afternoon',
+                    'temperature': {
+                        'min': 12,
+                        'max': 18
+                    }
+                }
+            }
+        }
+    
+    async def _generate_alert_message(
+        self, 
+        rain_probability: int, 
+        description: str,
+        consecutive_days: int
+    ) -> str:
+        """
+        Generate an alert message using LLM.
+        
+        Args:
+            rain_probability: Probability of rain
+            description: Weather description
+            consecutive_days: Number of consecutive rainy days
+        
+        Returns:
+            str: Formatted alert message
+        """
+        # Create a prompt for the LLM
+        system_message = (
+            "You are Bennet, a helpful weather assistant. "
+            "Generate a friendly and informative rain alert message. "
+            "Include suggestions for dealing with the rain."
+        )
+        
+        prompt = (
+            f"Create a rain alert message for tomorrow with these details:\n"
+            f"- Chance of rain: {rain_probability}%\n"
+            f"- Weather description: {description}\n"
+            f"- Consecutive rainy days so far: {consecutive_days}\n\n"
+            f"Make it friendly and include 1-2 practical suggestions."
+        )
+        
+        try:
+            # Generate response from LLM
+            llm_response = await self.generate_llm_response(
+                prompt=prompt,
+                system_message=system_message,
+                temperature=0.7,
+                max_tokens=200
+            )
+            
+            # Format the response for Telegram
+            icon = TelegramFormatter.EMOJIS['rain']
+            title = f"{icon} Rain Alert for Tomorrow"
+            
+            return TelegramFormatter.status_message(
+                title=title,
+                content=llm_response,
+                status='warning'
+            )
+            
+        except Exception as e:
+            # Fallback to basic message if LLM fails
+            self.log_error(f"LLM generation failed: {str(e)}", e)
+            
+            message = (
+                f"🌧️ Rain alert for tomorrow! {rain_probability}% chance of rain expected. "
+                f"{description}. Don't forget your umbrella!"
+            )
+            
+            if consecutive_days > 0:
+                message += f"\n\nThis would be day {consecutive_days + 1} of rainy weather."
+            
+            return message
+    
+    def validate_config(self) -> bool:
+        """Validate module configuration."""
+        if not self.get_config('location'):
+            self.log_error("No location configured for weather alerts")
+            return False
+        
+        return True
+    
+    async def save_state(self) -> Dict[str, Any]:
+        """Save the current state of the module."""
+        return self.state
+    
+    async def load_state(self, state: Dict[str, Any]) -> None:
+        """Load a previously saved state."""
+        self.state = state
