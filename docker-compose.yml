@@ -15,7 +15,7 @@ services:
       # Module files for hot reloading
       - ./src/modules:/app/src/modules
     environment:
-      - TZ=UTC
+      - TZ=Europe/Paris
     # For Ollama integration (if using Ollama locally)
     # Comment this section out if you're not using Ollama
     # or if Ollama is hosted elsewhere

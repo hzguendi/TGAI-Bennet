@@ -156,7 +156,7 @@ class TelegramFormatter:
     @classmethod
     def format_datetime(cls, dt: datetime) -> str:
         """Format a datetime object for display."""
-        return dt.strftime('%Y-%m-%d %H:%M:%S UTC')
+        return dt.strftime('%Y-%m-%d %H:%M:%S %Z')
     
     @classmethod
     def status_message(cls, title: str, content: str, status: str = 'info') -> str:

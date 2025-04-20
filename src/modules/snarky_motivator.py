@@ -154,6 +154,8 @@ class SnarkyMotivatorModule(BaseModule):
                 "Create varied messages with different tones and approaches each time. "
                 "Sometimes focus on goals, sometimes on fears, sometimes on potential - be unpredictable. "
                 "Use plenty of colorful analogies and metaphors. Be memorable and don't hold back on the language."
+                "You can use quotes from time to time also"
+                "Be as random, funny, unexpected and creative as possible to avoid being repetitive."
             )
             
             # Tailor prompt based on time of day and previous messages
@@ -169,16 +171,17 @@ class SnarkyMotivatorModule(BaseModule):
             weekend_context = "weekend" if is_weekend else "workday"
             
             prompt = (
-                f"Create a short, snarky, motivational message with explicit profanity (use actual words like 'fuck', 'shit', 'ass' - "
+                f"Create a short, fun, snarky, motivational message with explicit profanity (use actual words like 'fuck', 'shit', 'ass' - "
                 f"DO NOT censor with asterisks) to motivate someone to be productive. "
                 f"It's currently {time_context} on a {day_of_week} ({weekend_context}). "
                 f"This is message #{message_count + 1} they're receiving today. "
-                f"Keep it under 100 words, make it punchy and memorable. "
+                f"Keep it under 100 words, make it punchy, funny and memorable. "
                 f"Include a specific call to action that encourages productivity or self-improvement. "
                 f"Base your message on one of these themes: missed opportunities, future regrets, competition, "
                 f"self-respect, or the satisfaction of achievement. Choose a different theme than your previous messages. "
                 f"MOST IMPORTANT: Ensure you use UNCENSORED profanity - write 'fuck' not 'f*ck', 'ass' not 'a**', 'shit' not 'sh*t' - "
                 f"no censorship or asterisks in your language at all."
+                f"MOST IMPORTANT: you are not obligated to use all the context (time, day, message count...) use a random combination on none or all randomly to be more unpredictable"
             )
             
             # Format messages in a way compatible with OpenAI v0.28.1

@@ -5,7 +5,7 @@ app:
   name: "TGAI-Bennet"
   version: "1.0.0"
   debug: true
-  timezone: "CEST"
+  timezone: "Europe/Paris"
 
 llm:
   default_provider: "openrouter"  # Options: openai, openrouter, deepseek, ollama
@@ -75,7 +75,7 @@ modules:
 
   SnarkyMotivatorModule:
     enabled: true
-    interval_minutes: 60
+    interval_minutes: 600
 
 logging:
   level: "DEBUG"             # Options: DEBUG, INFO, WARNING, ERROR, CRITICAL
