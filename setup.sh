@@ -15,7 +15,7 @@ RESET="\e[0m"
 
 # Installation directory (get the directory where this script is located)
 INSTALL_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-VENV_DIR="${INSTALL_DIR}/venv"
+VENV_DIR="${INSTALL_DIR}/.venv"
 SERVICE_NAME="tgai-bennet"
 SERVICE_FILE="${INSTALL_DIR}/systemd/${SERVICE_NAME}.service"
 SYSTEM_SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
@@ -107,12 +107,21 @@ check_requirements() {
 setup_virtualenv() {
     info "Setting up Python virtual environment..."
     
-    # Create virtual environment if it doesn't exist
-    if [[ ! -d "$VENV_DIR" ]]; then
+    # Check if virtual environment exists and ask if user wants to delete it
+    if [[ -d "$VENV_DIR" ]]; then
+        warning "Virtual environment already exists at $VENV_DIR"
+        read -p "Do you want to delete the existing virtual environment and create a new one? (y/n): " DELETE_VENV
+        if [[ "$DELETE_VENV" =~ ^[Yy]$ ]]; then
+            rm -rf "$VENV_DIR"
+            info "Deleted existing virtual environment"
+            python3 -m venv "$VENV_DIR"
+            success "Created new virtual environment at $VENV_DIR"
+        else
+            info "Using existing virtual environment"
+        fi
+    else
         python3 -m venv "$VENV_DIR"
         success "Created virtual environment at $VENV_DIR"
-    else
-        info "Virtual environment already exists at $VENV_DIR"
     fi
     
     # Activate virtual environment
@@ -120,6 +129,19 @@ setup_virtualenv() {
     
     # Upgrade pip
     pip install --upgrade pip
+    
+    # Check if Rust and Cargo are installed (needed for pydantic)
+    info "Checking for Rust and Cargo installation..."
+    if ! command -v cargo &> /dev/null || ! command -v rustc &> /dev/null; then
+        warning "Rust and/or Cargo not found. Installing Rust toolchain..."
+        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+        source "$HOME/.cargo/env"
+        success "Rust toolchain installed successfully"
+    else
+        RUST_VERSION=$(rustc --version | cut -d' ' -f2)
+        CARGO_VERSION=$(cargo --version | cut -d' ' -f2)
+        info "Found Rust $RUST_VERSION and Cargo $CARGO_VERSION"
+    fi
     
     # Install requirements
     info "Installing dependencies..."

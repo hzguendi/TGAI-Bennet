@@ -16,12 +16,23 @@ TGAI-Bennet is a modular Telegram bot that connects to various LLM providers (Op
 
 ## Requirements
 
+### For Local Installation
 - Python 3.7 or newer
 - Linux system with systemd (for service installation)
+- Rust and Cargo (for pydantic dependency)
+- Telegram Bot token (get from [@BotFather](https://t.me/BotFather))
+- API key for at least one of the supported LLM providers
+
+### For Docker Installation
+- Docker and Docker Compose
 - Telegram Bot token (get from [@BotFather](https://t.me/BotFather))
 - API key for at least one of the supported LLM providers
 
 ## Installation
+
+You can install TGAI-Bennet as a Linux service or run it in Docker.
+
+### Option 1: Linux Service Installation
 
 1. Clone this repository:
    ```bash
@@ -34,6 +45,8 @@ TGAI-Bennet is a modular Telegram bot that connects to various LLM providers (Op
    chmod +x setup.sh
    ./setup.sh
    ```
+   The setup script will check for Rust/Cargo and install it if needed.
+   If a virtual environment already exists, it will ask if you want to delete it.
 
 3. Edit the `.env` file with your API keys and Telegram credentials:
    ```bash
@@ -44,6 +57,54 @@ TGAI-Bennet is a modular Telegram bot that connects to various LLM providers (Op
    ```bash
    sudo systemctl start tgai-bennet
    ```
+
+### Option 2: Docker Installation
+
+1. Clone this repository:
+   ```bash
+   git clone https://github.com/hzguendi/TGAI-Bennet.git
+   cd TGAI-Bennet
+   ```
+
+2. Create a `.env` file based on the `.env.sample`:
+   ```bash
+   cp .env.sample .env
+   nano .env
+   ```
+   Fill in your API keys and Telegram credentials.
+
+3. Create the necessary data directories:
+   ```bash
+   mkdir -p logs data logs/modules
+   ```
+
+4. Build and start the Docker container:
+   ```bash
+   docker-compose up -d
+   ```
+
+5. View logs:
+   ```bash
+   docker-compose logs -f
+   ```
+
+### Docker Data Persistence
+
+The Docker setup ensures all data is preserved between container restarts:
+
+- **Configuration**: Your `.env` and `conf.yml` files are mounted from the host
+- **Logs**: All logs are stored in the `./logs` directory on your host system
+- **Data**: Module states and other data are preserved in the `./data` directory
+
+This means you can safely update, restart, or rebuild the container without losing any data.
+
+### Using Ollama with Docker
+
+If you want to use Ollama with the Docker setup:
+
+1. Uncomment the Ollama service section in the `docker-compose.yml` file
+2. Create the Ollama data directory: `mkdir -p ollama`
+3. Update your `.env` file to use `http://ollama:11434` as the `OLLAMA_HOST`
 
 ## Configuration
 

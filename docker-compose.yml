@@ -1,0 +1,38 @@
+version: '3.8'
+
+services:
+  tgai-bennet:
+    build: .
+    container_name: tgai-bennet
+    restart: unless-stopped
+    volumes:
+      # Persist logs and data between container restarts
+      - ./logs:/app/logs
+      - ./data:/app/data
+      # Configuration files
+      - ./.env:/app/.env
+      - ./conf.yml:/app/conf.yml
+    environment:
+      - TZ=UTC
+    # For Ollama integration (if using Ollama locally)
+    # Comment this section out if you're not using Ollama
+    # or if Ollama is hosted elsewhere
+    networks:
+      - tgai-network
+
+  # Optional: Include Ollama service if you want to run it in Docker
+  # Uncomment the following section if you want to run Ollama in Docker
+  # ollama:
+  #   image: ollama/ollama:latest
+  #   container_name: ollama
+  #   volumes:
+  #     - ./ollama:/root/.ollama
+  #   ports:
+  #     - "11434:11434"
+  #   restart: unless-stopped
+  #   networks:
+  #     - tgai-network
+
+networks:
+  tgai-network:
+    driver: bridge
