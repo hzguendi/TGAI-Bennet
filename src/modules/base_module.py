@@ -172,6 +172,8 @@ class BaseModule(ABC):
         model: Optional[str] = None,
         temperature: Optional[float] = None,
         max_tokens: Optional[int] = None,
+        chat_id: Optional[int] = None,
+        use_history: bool = False,
         **kwargs
     ) -> str:
         """
@@ -183,27 +185,69 @@ class BaseModule(ABC):
             model: Model to use (defaults to config setting)
             temperature: Temperature for response generation
             max_tokens: Maximum tokens in response
+            chat_id: Optional chat ID for maintaining conversation history
+            use_history: Whether to use conversation history (requires chat_id)
             **kwargs: Additional provider-specific parameters
         
         Returns:
             str: LLM response content
         """
-        messages = []
-        
-        if system_message:
-            messages.append({"role": "system", "content": system_message})
-        
-        messages.append({"role": "user", "content": prompt})
-        
         try:
-            response = await self.llm_client.chat_completion(
-                messages=messages,
-                model=model,
-                temperature=temperature,
-                max_tokens=max_tokens,
-                **kwargs
-            )
-            return response.content
+            # Use context-aware completion if history is requested and chat_id is provided
+            if use_history and chat_id is not None:
+                response = await self.llm_client.get_context_aware_completion(
+                    chat_id=chat_id,
+                    user_message=prompt,
+                    model=model,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                    module_name=self.__class__.__name__,
+                    **kwargs
+                )
+                return response.content
+            else:
+                # Standard completion without history
+                messages = []
+                
+                if system_message:
+                    messages.append({"role": "system", "content": system_message})
+                
+                messages.append({"role": "user", "content": prompt})
+                
+                response = await self.llm_client.chat_completion(
+                    messages=messages,
+                    model=model,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                    **kwargs
+                )
+                
+                # If chat_id is provided, store the exchange in history even if not using history for generation
+                if chat_id is not None:
+                    try:
+                        # Get chat history manager
+                        history_manager = await self.llm_client.get_chat_history_manager()
+                        
+                        # Add the exchange to history
+                        await history_manager.add_message(
+                            chat_id=chat_id,
+                            role="user",
+                            content=prompt,
+                            model=model,
+                            metadata={"module": self.__class__.__name__}
+                        )
+                        
+                        await history_manager.add_message(
+                            chat_id=chat_id,
+                            role="assistant",
+                            content=response.content,
+                            model=model,
+                            metadata={"module": self.__class__.__name__}
+                        )
+                    except Exception as history_error:
+                        self.logger.warning(f"Failed to store exchange in history: {str(history_error)}")
+                
+                return response.content
         except Exception as e:
             self.logger.error(f"LLM generation failed: {str(e)}")
             raise ModuleExecutionError(f"LLM generation failed: {str(e)}", e)

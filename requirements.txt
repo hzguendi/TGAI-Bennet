@@ -10,6 +10,10 @@ watchdog==4.0.0  # For module hot-reloading
 loguru==0.7.2   # Advanced logging with rotation
 psutil==5.9.5    # System monitoring for health checks
 
+# Chat history and token counting
+aiosqlite==0.19.0  # Async SQLite operations
+tiktoken==0.5.1    # Token counting for LLM context management
+
 # For development and testing
 pytest==8.1.1
 black==24.3.0

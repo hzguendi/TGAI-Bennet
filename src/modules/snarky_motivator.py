@@ -168,10 +168,12 @@ class SnarkyMotivatorModule(BaseModule):
             
             self.log_info(f"Using direct OpenAI call with model={self.config.get('llm.default_model')}")
             
-            # Use the dedicated method for OpenAI format
+            # Use the dedicated method for OpenAI format with chat history
             llm_response = await self.generate_llm_response(
                 prompt=prompt,
-                system_message=system_message
+                system_message=system_message,
+                chat_id=self.bot.admin_chat_id,  # Use admin chat ID for messages
+                use_history=True                 # Leverage conversation history
             )
             
             self.log_info(f"LLM response received. Length: {len(llm_response or '')}")

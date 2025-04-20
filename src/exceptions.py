@@ -66,6 +66,11 @@ class HealthCheckError(BennetBaseException):
     pass
 
 
+class DatabaseError(BennetBaseException):
+    """Raised when there's an error with database operations."""
+    pass
+
+
 class StateError(BennetBaseException):
     """Raised when there's an error with state management."""
     pass

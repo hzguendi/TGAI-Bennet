@@ -34,7 +34,7 @@ class BennetLogger:
         else:
             # Default configuration
             return {
-                'level': 'INFO',
+                'level': 'DEBUG',
                 'format': '%(asctime)s [%(levelname)s] %(name)s: %(message)s',
                 'file': {
                     'enabled': True,
@@ -90,7 +90,7 @@ class BennetLogger:
             
             logger.add(
                 log_path,
-                level=self.config.get('level', 'INFO'),
+                level=self.config.get('level', 'DEBUG'),
                 format="{time:YYYY-MM-DD HH:mm:ss} | {level: <8} | {name}:{function}:{line} - {message}",
                 retention=retention,
                 compression="zip",

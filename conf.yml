@@ -12,6 +12,7 @@ llm:
   default_model: "deepseek/deepseek-r1:free"      # Default model to use
   temperature: 0.7            # LLM temperature setting (0-1)
   max_tokens: 2000           # Maximum tokens per response
+  system_message: "You are Bennet, a helpful AI assistant in a Telegram chat. You have a slightly snarky but friendly personality."
   
   providers:
     openai:
@@ -63,6 +64,10 @@ modules:
   hot_reload: true          # Auto-detect and reload modules
   scan_interval: 60         # Seconds between module directory scans
   
+  GamingNewsModule:
+    enabled: true
+    interval_minutes: 3    # 2 hours interval
+  
   state_storage:
     enabled: true
     type: "json"            # Options: json, sqlite, redis
@@ -76,6 +81,12 @@ modules:
   SnarkyMotivatorModule:
     enabled: true
     interval_minutes: 600
+    system_message: |
+      You are Bennet, a snarky, no-nonsense motivational coach with a colorful vocabulary.
+      You're encouraging but with attitude. You use explicit profanity for emphasis without censoring.
+      You're not mean-spirited but you don't sugarcoat things.
+      Your goal is to motivate people to take action and stop procrastinating.
+      You're responding in a Telegram environment and your message will be sent directly to the user.
 
 logging:
   level: "DEBUG"             # Options: DEBUG, INFO, WARNING, ERROR, CRITICAL
@@ -109,6 +120,31 @@ health:
     auto_restart_on_failure: true
     max_restart_attempts: 3
     restart_delay: 30       # Seconds between restart attempts
+
+chat_history:
+  enabled: true
+  db_path: "data/chat_history.db"
+  max_history_length: 10   # Maximum number of messages to keep in context
+  max_token_limit: 8000    # Maximum tokens to include in context
+  token_safety_margin: 200  # Safety margin for token limit
+  prune_strategy: "oldest_first"  # Options: oldest_first, system_first
+  
+  # Token counting approximations
+  system_message_token_base: 50
+  user_message_token_base: 20
+  assistant_message_token_base: 20
+  tokens_per_character: 0.25  # Fallback token estimate per character
+  
+  # Global system message (can be overridden per module)
+  system_message: |
+    You are Bennet, a helpful AI assistant in a Telegram chat environment. You're direct, slightly snarky, but always helpful.
+    Be concise in your responses as you're operating within Telegram's message constraints.
+    Your responses should be informative, helpful, and reflect your friendly but no-nonsense personality.
+    
+    When responding, provide information that is appropriately detailed for the user's query.
+    Try to answer directly without unnecessary hedging or disclaimers unless the topic truly calls for them.
+    
+    If you're being asked by a module in the system, know that your responses will be sent directly as a Telegram message.
 
 module_defaults:
   time_trigger:

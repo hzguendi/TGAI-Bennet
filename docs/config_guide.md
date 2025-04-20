@@ -72,6 +72,7 @@ llm:
   default_model: "gpt-4"      # Default model to use
   temperature: 0.7            # LLM temperature setting (0-1)
   max_tokens: 2000            # Maximum tokens per response
+  system_message: "You are Bennet, a helpful AI assistant in a Telegram chat." # Default system prompt
   
   providers:
     openai:
@@ -172,6 +173,32 @@ health:
     restart_delay: 30       # Seconds between restart attempts
 ```
 
+### Chat History Section
+
+Configuration for conversation history and context management:
+
+```yaml
+chat_history:
+  enabled: true              # Enable/disable chat history
+  db_path: "data/chat_history.db"  # SQLite database path
+  max_history_length: 10     # Maximum number of messages to keep in context
+  max_token_limit: 8000      # Maximum tokens to include in context
+  token_safety_margin: 200   # Safety margin for token limit
+  prune_strategy: "oldest_first"  # Options: oldest_first, system_first
+  
+  # Token counting approximations
+  system_message_token_base: 50
+  user_message_token_base: 20
+  assistant_message_token_base: 20
+  tokens_per_character: 0.25  # Fallback token estimate per character
+  
+  # Global system message (can be overridden per module)
+  system_message: |
+    You are Bennet, a helpful AI assistant in a Telegram chat environment.
+    Be concise in your responses as you're operating within Telegram's message constraints.
+    Your responses should be informative, helpful, and reflect your personality.
+```
+
 ### Module Defaults Section
 
 Default configuration for modules:
@@ -226,6 +253,18 @@ modules:
     price_threshold_low: 20000
     price_threshold_high: 45000
     percent_change_alert: 5
+    
+  SnarkyMotivatorModule:
+    enabled: true
+    interval_minutes: 600
+    system_message: |
+      You are Bennet, a snarky, no-nonsense motivational coach with a colorful vocabulary.
+      Your goal is to motivate people to take action and stop procrastinating.
+      # This overrides the default system message for this module
+      
+  GamingNewsModule:
+    enabled: true
+    interval_minutes: 120    # 2 hours interval
 ```
 
 Modules can access their specific configuration using the `get_config` method:
@@ -233,3 +272,34 @@ Modules can access their specific configuration using the `get_config` method:
 ```python
 location = self.get_config('location', 'London,UK')  # Default to London if not specified
 ```
+
+## Chat History and Context Awareness
+
+TGAI-Bennet now supports persistent conversation history using SQLite, which allows the bot to maintain context across messages.
+
+### Key Features
+
+1. **Automatic Context Management**: The bot automatically manages conversation context based on configured token limits.
+2. **Per-Module System Messages**: Each module can have its own system message for personalized interactions.
+3. **Token Counting**: The system accurately counts tokens for different models to optimize context usage.
+4. **Fallback Mechanisms**: If token counting fails, the system uses character-based approximations.
+
+### Commands
+
+- `/clear` - Clears the conversation history for the current chat.
+
+### Using Chat History in Modules
+
+Modules can leverage conversation history using the extended `generate_llm_response` method:
+
+```python
+response = await self.generate_llm_response(
+    prompt="Your prompt here",
+    system_message="Optional system message",
+    chat_id=self.bot.admin_chat_id,  # Required for chat history
+    use_history=True,                # Enable context awareness
+    model="gpt-4"                    # Optional model specification
+)
+```
+
+The chat history is stored in SQLite at the configured path (`data/chat_history.db` by default) and managed automatically.

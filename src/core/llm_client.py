@@ -14,10 +14,12 @@ from enum import Enum
 
 import requests
 import openai
+import tiktoken
 
 from src.exceptions import LLMProviderError, RateLimitError
 from src.config.loader import get_config
 from src.utils.logger import get_logger
+from src.utils.chat_history import ChatHistoryManager
 
 
 logger = get_logger("llm_client")
@@ -71,6 +73,9 @@ class LLMClient:
         self.last_request_time = 0
         self.rate_limit_window = self.config.get('RATE_LIMIT_WINDOW', 60)
         self.rate_limit_requests = self.config.get('RATE_LIMIT_REQUESTS', 20)
+        
+        # Chat history manager (shared instance for token calculations)
+        self.chat_history = None
         
         logger.info(f"LLM client initialized with provider: {self.provider}")
     
@@ -148,6 +153,161 @@ class LLMClient:
                 await asyncio.sleep(delay)
                 delay *= backoff_factor
     
+    def _log_request_debug(self, messages, model, temperature, max_tokens, **kwargs):
+        """Log the full request details in debug mode."""
+        # Only log if debug mode is enabled
+        if not self.config.get('app.debug', False):
+            return
+            
+        debug_info = {
+            "model": model,
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+            "messages": messages
+        }
+        
+        # Add any additional parameters
+        for key, value in kwargs.items():
+            if key not in debug_info:
+                debug_info[key] = value
+                
+        try:
+            # Format as JSON with indentation for readability
+            import json
+            formatted_json = json.dumps(debug_info, indent=2, ensure_ascii=False)
+            
+            logger.debug(f"\n==== LLM REQUEST DEBUG ====")
+            logger.debug(f"Provider: {self.provider}")
+            logger.debug(f"Request: {formatted_json}")
+            logger.debug(f"==== END REQUEST DEBUG ====\n")
+        except Exception as e:
+            logger.debug(f"Failed to log debug request: {str(e)}")
+    
+    async def get_chat_history_manager(self):
+        """Get or initialize the chat history manager."""
+        if self.chat_history is None:
+            self.chat_history = ChatHistoryManager()
+            await self.chat_history.setup()
+        return self.chat_history
+        
+    async def get_context_aware_completion(
+        self,
+        chat_id: int,
+        user_message: str,
+        model: Optional[str] = None,
+        temperature: Optional[float] = None,
+        max_tokens: Optional[int] = None,
+        stream: bool = False,
+        module_name: Optional[str] = None,
+        **kwargs
+    ) -> Union[LLMResponse, AsyncGenerator[str, None]]:
+        """
+        Send a context-aware chat completion request using conversation history.
+        
+        Args:
+            chat_id: Telegram chat ID
+            user_message: The user's message
+            model: Model to use (provider-specific)
+            temperature: Sampling temperature (0-1)
+            max_tokens: Maximum tokens in response
+            stream: Whether to stream the response
+            module_name: Optional module name for module-specific system message
+            **kwargs: Additional provider-specific parameters
+            
+        Returns:
+            LLMResponse object or async generator yielding tokens if streaming
+        """
+        try:
+            # Get the chat history manager
+            history_manager = await self.get_chat_history_manager()
+            
+            # Use configured defaults if not provided
+            model = model or self.config.get('llm.default_model')
+            temperature = temperature or self.config.get('llm.temperature', 0.7)
+            max_tokens = max_tokens or self.config.get('llm.max_tokens', 2000)
+            
+            # Get appropriate system message
+            system_message = await history_manager.get_system_message(module_name, model)
+            
+            # Get conversation context
+            messages = await history_manager.create_chat_context(
+                chat_id=chat_id,
+                system_message=system_message,
+                model=model
+            )
+            
+            # Add the current user message
+            messages.append({"role": "user", "content": user_message})
+            
+            # Log the complete request in debug mode
+            self._log_request_debug(
+                messages=messages,
+                model=model,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                stream=stream,
+                module_name=module_name,
+                chat_id=chat_id,
+                **kwargs
+            )
+            
+            # Call the LLM
+            response = await self.chat_completion(
+                messages=messages,
+                model=model,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                stream=stream,
+                **kwargs
+            )
+            
+            # If not streaming, store the assistant's response in history
+            if not stream:
+                await history_manager.add_message(
+                    chat_id=chat_id,
+                    role="user",
+                    content=user_message,
+                    model=model
+                )
+                
+                await history_manager.add_message(
+                    chat_id=chat_id,
+                    role="assistant",
+                    content=response.content,
+                    model=model
+                )
+            
+            return response
+            
+        except Exception as e:
+            logger.error(f"Error in context-aware chat completion: {str(e)}")
+            # Fall back to standard completion without context
+            messages = [
+                {"role": "system", "content": self.config.get('llm.system_message', "You are a helpful assistant.")},
+                {"role": "user", "content": user_message}
+            ]
+            
+            # Log the fallback request too
+            self._log_request_debug(
+                messages=messages,
+                model=model or self.config.get('llm.default_model'),
+                temperature=temperature or self.config.get('llm.temperature', 0.7),
+                max_tokens=max_tokens or self.config.get('llm.max_tokens', 2000),
+                stream=stream,
+                fallback=True,
+                chat_id=chat_id,
+                **kwargs
+            )
+            
+            return await self.chat_completion(
+                messages=messages,
+                model=model,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                stream=stream,
+                **kwargs
+            )
+    
     async def chat_completion(
         self,
         messages: List[Dict[str, str]],
@@ -177,6 +337,17 @@ class LLMClient:
         model = model or self.config.get('llm.default_model')
         temperature = temperature or self.config.get('llm.temperature', 0.7)
         max_tokens = max_tokens or self.config.get('llm.max_tokens', 2000)
+        
+        # Log the complete request in debug mode
+        self._log_request_debug(
+            messages=messages,
+            model=model,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            stream=stream,
+            direct_call=True,
+            **kwargs
+        )
         
         if self.provider == LLMProvider.OLLAMA.value:
             # Special handling for Ollama
@@ -410,3 +581,9 @@ class LLMClient:
             'current_window_requests': self.request_count,
             'last_request_time': self.last_request_time
         }
+        
+    async def close(self):
+        """Close any open resources."""
+        if self.chat_history is not None:
+            await self.chat_history.close()
+            self.chat_history = None

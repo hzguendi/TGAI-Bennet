@@ -124,6 +124,11 @@ class TGAIBennet:
             CommandHandler('help', self._cmd_help)
         )
         
+        # Clear command to reset conversation history
+        self.application.add_handler(
+            CommandHandler('clear', self._cmd_clear_history)
+        )
+        
         # Handler for regular messages (chat)
         self.application.add_handler(
             MessageHandler(
@@ -145,6 +150,7 @@ class TGAIBennet:
             "🤖 Welcome to TGAI-Bennet!\n\n"
             f"I am your AI assistant powered by {self.llm_client.provider}.\n"
             "Send me any message and I'll respond using AI.\n\n"
+            "I can maintain context of our conversation to provide more relevant responses.\n\n"
             "Use /help to see available commands."
         )
         
@@ -160,6 +166,7 @@ class TGAIBennet:
         help_text = "📚 Available Commands:\n\n"
         help_text += "/start - Start the bot\n"
         help_text += "/help - Show this help message\n"
+        help_text += "/clear - Clear conversation history\n"
         
         if await self._is_admin(update):
             help_text += "\n👑 Admin Commands:\n"
@@ -238,6 +245,17 @@ class TGAIBennet:
                 'Rate Limit Window': f"{metrics.get('rate_limit_window', 0)}s",
                 'Rate Limit Requests': metrics.get('rate_limit_requests', 0),
             })
+            
+            # Add chat history information if available
+            try:
+                if self.llm_client.chat_history:
+                    chat_id = update.effective_chat.id
+                    history = await self.llm_client.chat_history.get_conversation_history(chat_id)
+                    status_info.update({
+                        'Chat History': f"{len(history)} messages"
+                    })
+            except Exception as e:
+                logger.error(f"Failed to get chat history status: {str(e)}")
         
         message = TelegramFormatter.status_message(
             "TGAI-Bennet Status",
@@ -301,19 +319,18 @@ class TGAIBennet:
             return
         
         user_message = update.message.text
+        chat_id = update.effective_chat.id
         
         try:
             # Show typing indicator
             await update.message.chat.send_action(constants.ChatAction.TYPING)
             
-            # Create messages for LLM
-            messages = [
-                {"role": "system", "content": "You are Bennet, a helpful AI assistant in a Telegram chat."},
-                {"role": "user", "content": user_message}
-            ]
-            
-            # Get LLM response
-            response = await self.llm_client.chat_completion(messages)
+            # Get context-aware LLM response using chat history
+            response = await self.llm_client.get_context_aware_completion(
+                chat_id=chat_id,
+                user_message=user_message,
+                module_name="telegram_bot"
+            )
             
             # Format and send response
             formatted_response = response.content
@@ -335,16 +352,38 @@ class TGAIBennet:
         
         except Exception as e:
             logger.error(f"Error handling message: {str(e)}")
-            error_message = TelegramFormatter.error_message(
-                "Message Handling Error",
-                e,
-                details={'message': user_message[:50] + '...' if len(user_message) > 50 else user_message}
-            )
-            
-            await update.message.reply_text(
-                error_message,
-                parse_mode=self.config.get('telegram.parse_mode', 'Markdown')
-            )
+            # Fallback to simple completion without context if context-aware completion fails
+            try:
+                # Create simple messages for LLM without history
+                messages = [
+                    {"role": "system", "content": "You are Bennet, a helpful AI assistant in a Telegram chat."},
+                    {"role": "user", "content": user_message}
+                ]
+                
+                # Get LLM response
+                fallback_response = await self.llm_client.chat_completion(messages)
+                
+                # Send fallback response
+                await update.message.reply_text(
+                    fallback_response.content,
+                    parse_mode=self.config.get('telegram.parse_mode', 'Markdown')
+                )
+                
+                logger.info("Successfully sent fallback response without chat history context")
+                
+            except Exception as fallback_error:
+                # If even the fallback fails, send an error message
+                logger.error(f"Fallback response also failed: {str(fallback_error)}")
+                error_message = TelegramFormatter.error_message(
+                    "Message Handling Error",
+                    e,
+                    details={'message': user_message[:50] + '...' if len(user_message) > 50 else user_message}
+                )
+                
+                await update.message.reply_text(
+                    error_message,
+                    parse_mode=self.config.get('telegram.parse_mode', 'Markdown')
+                )
     
     async def _error_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle errors in the bot."""
@@ -468,6 +507,10 @@ class TGAIBennet:
                     # Ignore errors when sending shutdown message
                     pass
                 
+                # Close the LLM client and its resources
+                if self.llm_client:
+                    await self.llm_client.close()
+                
                 # Stop polling and shutdown
                 await self.application.updater.stop()
                 await self.application.stop()
@@ -486,3 +529,40 @@ class TGAIBennet:
     def set_health_monitor(self, health_monitor):
         """Set the health monitor instance."""
         self.health_monitor = health_monitor
+        
+    async def _cmd_clear_history(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle /clear command to reset conversation history."""
+        chat_id = update.effective_chat.id
+        
+        try:
+            if self.llm_client:
+                history_manager = await self.llm_client.get_chat_history_manager()
+                await history_manager.clear_chat_history(chat_id)
+                
+                message = TelegramFormatter.status_message(
+                    "History Cleared",
+                    "Your conversation history has been cleared successfully.",
+                    status='success'
+                )
+                
+                await update.message.reply_text(
+                    message,
+                    parse_mode=self.config.get('telegram.parse_mode', 'Markdown')
+                )
+                
+                logger.info(f"Cleared chat history for chat {chat_id}")
+            else:
+                await update.message.reply_text(
+                    "⚠️ Cannot clear history: LLM client not initialized."
+                )
+        except Exception as e:
+            logger.error(f"Failed to clear chat history: {str(e)}")
+            error_message = TelegramFormatter.error_message(
+                "Clear History Error",
+                e
+            )
+            
+            await update.message.reply_text(
+                error_message,
+                parse_mode=self.config.get('telegram.parse_mode', 'Markdown')
+            )
