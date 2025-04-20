@@ -117,25 +117,6 @@ class SnarkyMotivatorModule(BaseModule):
         self.log_info("Cleaning up Snarky Motivator Module")
         # No specific cleanup needed for this module
     
-
-    
-    async def _generate_openai_response(self, messages, model=None, temperature=0.7, max_tokens=None) -> str:
-        """Generate a response using OpenAI v0.28.1 API format."""
-        try:
-            # Direct call to the LLM client
-            response = await self.llm_client.chat_completion(
-                messages=messages,
-                model=model,
-                temperature=temperature,
-                max_tokens=max_tokens
-            )
-            
-            # Return the content
-            return response.content
-        except Exception as e:
-            self.log_error(f"OpenAI response generation failed: {str(e)}")
-            raise ModuleExecutionError(f"OpenAI response generation failed: {str(e)}", e)
-    
     async def _generate_motivational_message(self) -> str:
         """
         Generate a snarky motivational message using LLM or fallback.
@@ -182,22 +163,15 @@ class SnarkyMotivatorModule(BaseModule):
                 f"MOST IMPORTANT: Ensure you use UNCENSORED profanity - write 'fuck' not 'f*ck', 'ass' not 'a**', 'shit' not 'sh*t' - "
                 f"no censorship or asterisks in your language at all."
                 f"MOST IMPORTANT: you are not obligated to use all the context (time, day, message count...) use a random combination on none or all randomly to be more unpredictable"
+                f"MOST IMPORTANT: just give the message, no quotes, no theme just the message itself"
             )
-            
-            # Format messages in a way compatible with OpenAI v0.28.1
-            openai_messages = [
-                {"role": "system", "content": system_message},
-                {"role": "user", "content": prompt}
-            ]
             
             self.log_info(f"Using direct OpenAI call with model={self.config.get('llm.default_model')}")
             
             # Use the dedicated method for OpenAI format
-            llm_response = await self._generate_openai_response(
-                messages=openai_messages,
-                temperature=0.9,
-                max_tokens=200,
-                model="gpt-3.5-turbo"  # Explicitly specify a model
+            llm_response = await self.generate_llm_response(
+                prompt=prompt,
+                system_message=system_message
             )
             
             self.log_info(f"LLM response received. Length: {len(llm_response or '')}")
