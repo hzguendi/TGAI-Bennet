@@ -1,6 +1,6 @@
 # Core dependencies
 python-telegram-bot==21.2
-openai==1.23.2
+openai==0.28.1  # Using the last version before the major API change
 python-dotenv==1.0.1
 PyYAML==6.0.1
 requests==2.31.0
@@ -8,6 +8,7 @@ aiohttp==3.9.3
 schedule==1.2.1
 watchdog==4.0.0  # For module hot-reloading
 loguru==0.7.2   # Advanced logging with rotation
+psutil==5.9.5    # System monitoring for health checks
 
 # For development and testing
 pytest==8.1.1

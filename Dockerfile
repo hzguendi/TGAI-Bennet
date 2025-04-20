@@ -11,6 +11,8 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     curl \
+    python3-dev \
+    procps \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Rust and Cargo
@@ -20,8 +22,11 @@ ENV PATH="/root/.cargo/bin:${PATH}"
 # Copy requirements file
 COPY requirements.txt .
 
-# Install Python dependencies
+# Install Python dependencies with the correct version of OpenAI
 RUN pip install --no-cache-dir -r requirements.txt
+
+# Ensure we have the right version - failsafe
+RUN pip install --no-cache-dir "openai==0.28.1"
 
 # Copy project files
 COPY . .

@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from enum import Enum
 
 import requests
-from openai import OpenAI, AsyncOpenAI
+import openai
 
 from src.exceptions import LLMProviderError, RateLimitError
 from src.config.loader import get_config
@@ -83,28 +83,17 @@ class LLMClient:
             raise LLMProviderError(f"API key not found for provider: {self.provider}")
         
         if self.provider == LLMProvider.OPENAI.value:
-            self.sync_client = OpenAI(api_key=self.api_key)
-            self.async_client = AsyncOpenAI(api_key=self.api_key)
-        elif self.provider == LLMProvider.OPENROUTER.value:
-            # OpenRouter uses OpenAI-compatible API
-            self.sync_client = OpenAI(
-                api_key=self.api_key,
-                base_url=self.base_url
-            )
-            self.async_client = AsyncOpenAI(
-                api_key=self.api_key,
-                base_url=self.base_url
-            )
-        elif self.provider == LLMProvider.DEEPSEEK.value:
-            # DeepSeek uses OpenAI-compatible API
-            self.sync_client = OpenAI(
-                api_key=self.api_key,
-                base_url=self.base_url
-            )
-            self.async_client = AsyncOpenAI(
-                api_key=self.api_key,
-                base_url=self.base_url
-            )
+            # Use global openai configuration for v0.x API
+            openai.api_key = self.api_key
+            # No need to explicitly create a client in v0.x
+            self.sync_client = None
+            self.async_client = None
+        elif self.provider in [LLMProvider.OPENROUTER.value, LLMProvider.DEEPSEEK.value]:
+            # Use global openai configuration for v0.x API but customize base URL
+            openai.api_key = self.api_key
+            openai.api_base = self.base_url
+            self.sync_client = None
+            self.async_client = None
         elif self.provider == LLMProvider.OLLAMA.value:
             # For Ollama, we'll use direct HTTP requests
             self.sync_client = None
@@ -194,19 +183,32 @@ class LLMClient:
             return await self._ollama_chat(messages, model, temperature, max_tokens, stream)
         
         async def request_func():
-            response = await self.async_client.chat.completions.create(
-                model=model,
-                messages=messages,
-                temperature=temperature,
-                max_tokens=max_tokens,
-                stream=stream,
-                **kwargs
-            )
+            # Use openai v0.x API with asyncio
+            loop = asyncio.get_event_loop()
             
+            # Create common parameters
+            params = {
+                "model": model,
+                "messages": messages,
+                "temperature": temperature,
+                "max_tokens": max_tokens,
+                "stream": stream,
+                **kwargs
+            }
+            
+            # Use loop.run_in_executor to make the synchronous API call asynchronous
             if stream:
-                return self._process_stream(response)
+                response = await loop.run_in_executor(
+                    None, 
+                    lambda: openai.ChatCompletion.create(**params)
+                )
+                return self._process_stream_v0(response)
             else:
-                return self._process_response(response)
+                response = await loop.run_in_executor(
+                    None, 
+                    lambda: openai.ChatCompletion.create(**params)
+                )
+                return self._process_response_v0(response)
         
         try:
             result = await self._retry_with_backoff(request_func)
@@ -272,28 +274,30 @@ class LLMClient:
                 except json.JSONDecodeError:
                     logger.warning(f"Failed to decode Ollama stream line: {line}")
     
-    def _process_response(self, response) -> LLMResponse:
-        """Process a non-streaming response into standardized format."""
-        choice = response.choices[0]
+    def _process_response_v0(self, response) -> LLMResponse:
+        """Process a non-streaming response from v0 API into standardized format."""
+        choice = response['choices'][0]
         
         return LLMResponse(
-            content=choice.message.content,
-            model=response.model,
+            content=choice['message']['content'],
+            model=response['model'],
             provider=self.provider,
-            tokens_used=response.usage.total_tokens if hasattr(response, 'usage') else None,
-            finish_reason=choice.finish_reason,
+            tokens_used=response['usage']['total_tokens'] if 'usage' in response else None,
+            finish_reason=choice['finish_reason'],
             metadata={
-                'id': response.id,
-                'created': response.created,
-                'system_fingerprint': getattr(response, 'system_fingerprint', None)
+                'id': response['id'],
+                'created': response['created'],
+                'system_fingerprint': response.get('system_fingerprint')
             }
         )
     
-    async def _process_stream(self, response):
-        """Process a streaming response, yielding tokens."""
-        async for chunk in response:
-            if chunk.choices and chunk.choices[0].delta.content:
-                yield chunk.choices[0].delta.content
+    async def _process_stream_v0(self, response):
+        """Process a streaming response from v0 API, yielding tokens."""
+        for chunk in response:
+            if 'choices' in chunk and len(chunk['choices']) > 0:
+                delta = chunk['choices'][0].get('delta', {})
+                if 'content' in delta and delta['content']:
+                    yield delta['content']
     
     def sync_chat_completion(
         self,
@@ -332,7 +336,8 @@ class LLMClient:
             return self._sync_ollama_chat(messages, model, temperature, max_tokens)
         
         try:
-            response = self.sync_client.chat.completions.create(
+            # Use openai v0.x synchronous API
+            response = openai.ChatCompletion.create(
                 model=model,
                 messages=messages,
                 temperature=temperature,
@@ -340,7 +345,7 @@ class LLMClient:
                 **kwargs
             )
             
-            return self._process_response(response)
+            return self._process_response_v0(response)
         except Exception as e:
             logger.error(f"Error in synchronous chat completion: {str(e)}")
             raise LLMProviderError(f"Synchronous chat completion failed: {str(e)}", e)

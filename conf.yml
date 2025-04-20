@@ -4,12 +4,12 @@
 app:
   name: "TGAI-Bennet"
   version: "1.0.0"
-  debug: false
-  timezone: "UTC"
+  debug: true
+  timezone: "CEST"
 
 llm:
-  default_provider: "openai"  # Options: openai, openrouter, deepseek, ollama
-  default_model: "gpt-4"      # Default model to use
+  default_provider: "openrouter"  # Options: openai, openrouter, deepseek, ollama
+  default_model: "deepseek/deepseek-r1:free"      # Default model to use
   temperature: 0.7            # LLM temperature setting (0-1)
   max_tokens: 2000           # Maximum tokens per response
   
@@ -24,6 +24,7 @@ llm:
     openrouter:
       base_url: "https://openrouter.ai/api/v1"
       models:
+        - "deepseek/deepseek-r1:free"
         - "openai/gpt-3.5-turbo"
         - "anthropic/claude-2"
         - "google/palm-2-chat-bison"
@@ -72,8 +73,12 @@ modules:
     retry_delay: 5          # Seconds between retries
     notify_on_error: true   # Send Telegram message on module errors
 
+  SnarkyMotivatorModule:
+    enabled: true
+    interval_minutes: 60
+
 logging:
-  level: "INFO"             # Options: DEBUG, INFO, WARNING, ERROR, CRITICAL
+  level: "DEBUG"             # Options: DEBUG, INFO, WARNING, ERROR, CRITICAL
   format: "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
   
   file:

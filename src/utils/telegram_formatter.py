@@ -36,6 +36,22 @@ class TelegramFormatter:
         '!': '\!'
     }
     
+    # Characters that ACTUALLY need to be escaped in Markdown to avoid breaking formatting
+    # This excludes punctuation like periods and exclamation marks for better readability
+    MINIMAL_ESCAPE_CHARS = {
+        '*': '\*',
+        '_': '\_', 
+        '`': '\`',
+        '[': '\[',
+        ']': '\]',
+        '(': '\(',
+        ')': '\)',
+        '~': '\~',
+        '#': '\#',
+        '<': '\<',
+        '>': '\>'
+    }
+    
     # Maximum message length for Telegram
     MAX_MESSAGE_LENGTH = 4096
     
@@ -77,14 +93,30 @@ class TelegramFormatter:
         return text
     
     @classmethod
+    def minimal_escape_markdown(cls, text: str) -> str:
+        """Escape only the essential Markdown characters that break formatting.
+        
+        This version doesn't escape punctuation like periods and exclamation marks,
+        resulting in more readable messages.
+        """
+        if not text:
+            return ""
+        
+        # Apply selective escaping - only escape characters that actually break Markdown
+        for char, escaped in cls.MINIMAL_ESCAPE_CHARS.items():
+            text = text.replace(char, escaped)
+            
+        return text
+    
+    @classmethod
     def bold(cls, text: str) -> str:
         """Make text bold."""
-        return f"*{cls.escape_markdown(text)}*"
+        return f"*{cls.minimal_escape_markdown(text)}*"
     
     @classmethod
     def italic(cls, text: str) -> str:
         """Make text italic."""
-        return f"_{cls.escape_markdown(text)}_"
+        return f"_{cls.minimal_escape_markdown(text)}_"
     
     @classmethod
     def code(cls, text: str) -> str:
@@ -99,7 +131,7 @@ class TelegramFormatter:
     @classmethod
     def link(cls, text: str, url: str) -> str:
         """Create a markdown link."""
-        return f"[{cls.escape_markdown(text)}]({url})"
+        return f"[{cls.minimal_escape_markdown(text)}]({url})"
     
     @classmethod
     def header(cls, text: str, level: int = 1) -> str:
@@ -107,19 +139,19 @@ class TelegramFormatter:
         if level <= 3:
             return cls.bold(text)
         else:
-            return cls.escape_markdown(text)
+            return cls.minimal_escape_markdown(text)
     
     @classmethod
     def list_item(cls, text: str, level: int = 0) -> str:
         """Create a list item with indentation."""
         indent = "  " * level
-        return f"{indent}• {cls.escape_markdown(text)}"
+        return f"{indent}• {cls.minimal_escape_markdown(text)}"
     
     @classmethod
     def numbered_list_item(cls, number: int, text: str, level: int = 0) -> str:
         """Create a numbered list item with indentation."""
         indent = "  " * level
-        return f"{indent}{number}. {cls.escape_markdown(text)}"
+        return f"{indent}{number}. {cls.minimal_escape_markdown(text)}"
     
     @classmethod
     def format_datetime(cls, dt: datetime) -> str:
@@ -131,15 +163,18 @@ class TelegramFormatter:
         """
         Create a formatted status message with an emoji.
         Status can be: success, error, warning, info, alert
+        
+        Uses minimal escaping for readable messages.
         """
         emoji = cls.EMOJIS.get(status, cls.EMOJIS['info'])
-        header = cls.bold(f"{emoji} {title}")
+        header = f"*{emoji} {cls.minimal_escape_markdown(title)}*"
         
         if isinstance(content, list):
             content_lines = [cls.list_item(item) for item in content]
             content_text = '\n'.join(content_lines)
         else:
-            content_text = cls.escape_markdown(content)
+            # Use minimal escaping for better readability
+            content_text = cls.minimal_escape_markdown(content)
         
         return f"{header}\n\n{content_text}"
     
@@ -150,14 +185,14 @@ class TelegramFormatter:
         header = cls.bold(f"{emoji} Module: {module_name}")
         
         status_emoji = cls.EMOJIS.get(status.lower(), cls.EMOJIS['info'])
-        status_line = f"{status_emoji} Status: {cls.escape_markdown(status)}"
+        status_line = f"{status_emoji} Status: {cls.minimal_escape_markdown(status)}"
         
         message_parts = [header, status_line]
         
         if details:
             for key, value in details.items():
-                formatted_key = cls.escape_markdown(key.replace('_', ' ').title())
-                formatted_value = cls.escape_markdown(str(value))
+                formatted_key = cls.minimal_escape_markdown(key.replace('_', ' ').title())
+                formatted_value = cls.minimal_escape_markdown(str(value))
                 message_parts.append(f"• {formatted_key}: {formatted_value}")
         
         return '\n'.join(message_parts)
@@ -214,7 +249,7 @@ class TelegramFormatter:
             message_parts.append("")
             message_parts.append(cls.bold("Details:"))
             for key, value in details.items():
-                message_parts.append(f"• {key}: {cls.escape_markdown(str(value))}")
+                message_parts.append(f"• {key}: {cls.minimal_escape_markdown(str(value))}")
         
         return '\n'.join(message_parts)
     
@@ -232,7 +267,7 @@ class TelegramFormatter:
         icon = severity_icons.get(severity.lower(), cls.EMOJIS['alert'])
         header = cls.bold(f"{icon} Alert: {title}")
         
-        return f"{header}\n\n{cls.escape_markdown(content)}"
+        return f"{header}\n\n{cls.minimal_escape_markdown(content)}"
     
     @classmethod
     def format_key_value_pairs(cls, data: Dict[str, Any], indent: int = 0) -> str:
@@ -241,7 +276,7 @@ class TelegramFormatter:
         indent_str = "  " * indent
         
         for key, value in data.items():
-            formatted_key = cls.escape_markdown(key.replace('_', ' ').title())
+            formatted_key = cls.minimal_escape_markdown(key.replace('_', ' ').title())
             
             if isinstance(value, dict):
                 lines.append(f"{indent_str}{formatted_key}:")
@@ -249,9 +284,9 @@ class TelegramFormatter:
             elif isinstance(value, list):
                 lines.append(f"{indent_str}{formatted_key}:")
                 for item in value:
-                    lines.append(f"{indent_str}  • {cls.escape_markdown(str(item))}")
+                    lines.append(f"{indent_str}  • {cls.minimal_escape_markdown(str(item))}")
             else:
-                lines.append(f"{indent_str}{formatted_key}: {cls.escape_markdown(str(value))}")
+                lines.append(f"{indent_str}{formatted_key}: {cls.minimal_escape_markdown(str(value))}")
         
         return '\n'.join(lines)
     
@@ -282,8 +317,8 @@ class TelegramFormatter:
     def table(cls, headers: List[str], rows: List[List[str]], max_col_width: int = 20) -> str:
         """Create a simple text table using monospace font."""
         # Escape all cell content
-        headers = [cls.escape_markdown(str(h)) for h in headers]
-        rows = [[cls.escape_markdown(str(cell)) for cell in row] for row in rows]
+        headers = [cls.minimal_escape_markdown(str(h)) for h in headers]
+        rows = [[cls.minimal_escape_markdown(str(cell)) for cell in row] for row in rows]
         
         # Calculate column widths
         col_widths = [min(max_col_width, max(len(h), max(len(str(row[i])) 

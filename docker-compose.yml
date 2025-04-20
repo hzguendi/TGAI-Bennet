@@ -12,6 +12,8 @@ services:
       # Configuration files
       - ./.env:/app/.env
       - ./conf.yml:/app/conf.yml
+      # Module files for hot reloading
+      - ./src/modules:/app/src/modules
     environment:
       - TZ=UTC
     # For Ollama integration (if using Ollama locally)

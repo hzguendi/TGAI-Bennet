@@ -462,8 +462,15 @@ class ModuleManager:
         """Schedule a module reload to avoid too frequent reloads."""
         if not self.reload_scheduled:
             self.reload_scheduled = True
-            # Schedule reload after a short delay
-            asyncio.create_task(self._delayed_reload())
+            # Use the main event loop to schedule reloads
+            try:
+                loop = asyncio.get_running_loop()
+                loop.call_soon_threadsafe(lambda: asyncio.create_task(self._delayed_reload()))
+                logger.info("Module reload scheduled")
+            except RuntimeError:
+                # Handle the case when no event loop is running
+                logger.info("Module file change detected - will reload on next opportunity")
+
     
     async def _delayed_reload(self):
         """Perform a delayed reload to batch file system changes."""

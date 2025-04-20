@@ -98,6 +98,12 @@ The Docker setup ensures all data is preserved between container restarts:
 
 This means you can safely update, restart, or rebuild the container without losing any data.
 
+### Troubleshooting Docker Issues
+
+- **Missing psutil error**: If you get an error about missing `psutil` module, rebuild the Docker image with the updated requirements: `docker-compose build --no-cache && docker-compose up -d`
+- **Permission issues**: If you encounter permission problems with logs or data directories, make sure these directories exist and have proper permissions: `mkdir -p logs data logs/modules && chmod -R 777 logs data`
+- **OpenAI API compatibility**: The project uses OpenAI v0.28.1, which is the last version before a major API rewrite. This ensures compatibility with the existing codebase. If you get OpenAI-related errors, make sure you're using this version: `pip install openai==0.28.1`
+
 ### Using Ollama with Docker
 
 If you want to use Ollama with the Docker setup:
@@ -224,10 +230,11 @@ class MyEventModule(BaseModule):
 
 ## Sample Modules
 
-Two sample modules are included to demonstrate the module system:
+Three sample modules are included to demonstrate the module system:
 
 1. **Weather Alert Module** (`weather_alert.py.sample`) - Checks weather forecasts and alerts when rain is expected tomorrow
 2. **BTC Price Monitor** (`btc_price_monitor.py.sample`) - Monitors Bitcoin price and sends alerts on significant changes
+3. **Snarky Motivator** (`snarky_motivator.py`) - Sends periodic snarky, sweary motivational messages to keep you moving
 
 To use these samples, rename them to remove the `.sample` extension.
 
