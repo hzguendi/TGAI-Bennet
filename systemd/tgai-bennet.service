@@ -1,0 +1,28 @@
+[Unit]
+Description=TGAI-Bennet Telegram Bot Service
+After=network.target
+
+[Service]
+Type=simple
+User=%USER%
+WorkingDirectory=%INSTALL_DIR%
+ExecStart=%VENV_DIR%/bin/python -m src.main
+Restart=on-failure
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=tgai-bennet
+Environment=PYTHONUNBUFFERED=1
+
+# Hardening options
+ProtectSystem=full
+PrivateTmp=true
+NoNewPrivileges=true
+ProtectHome=false  # Need access to home directory if installed there
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=true
+
+[Install]
+WantedBy=multi-user.target

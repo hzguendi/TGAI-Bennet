@@ -1,6 +1,6 @@
 """
-Sample Bitcoin price monitor module for TGAI-Bennet.
-This module monitors BTC/USDT price and alerts when it falls below a threshold.
+Sample BTC price monitoring module for TGAI-Bennet.
+This module monitors BTC/USDT price and alerts when it crosses certain thresholds.
 """
 
 import aiohttp
@@ -14,239 +14,309 @@ from src.utils.telegram_formatter import TelegramFormatter
 
 class BTCPriceMonitorModule(BaseModule):
     """
-    Bitcoin price monitor module that checks BTC/USDT price and sends alerts.
+    BTC price monitoring module that tracks BTC/USDT price and sends alerts.
     
     This is a sample implementation of an event-triggered module that demonstrates:
-    - Continuous monitoring with adjustable intervals
-    - Fetching real-time price data from APIs
-    - Managing price thresholds and alerts
-    - Using LLM for market analysis messages
-    - Tracking price history in module state
+    - Monitoring price changes using external API
+    - Threshold-based alerting
+    - Price trend analysis
+    - Using LLM for market commentary
+    - Managing persistent state
     """
     
     def __init__(self, bot_instance, config):
         super().__init__(bot_instance, config)
         
         # Module metadata
-        self.description = "Monitors BTC/USDT price and alerts when below threshold"
+        self.description = "Monitors BTC/USDT price and alerts on significant changes"
         self.author = "TGAI-Bennet Sample Module"
         self.version = "1.0.0"
         
-        # Set as event-based trigger (price check events)
+        # Set as event-based trigger
         self.trigger = TriggerConfig(
             ModuleTrigger.EVENT,
-            event_type='price_check'
+            event_type='price_check',
+            event_config={
+                'check_interval': 60,  # Check every 60 seconds
+                'source': 'binance'    # Default price source
+            }
         )
         
         # Module-specific configuration
-        self.price_threshold = 30000  # Default alert threshold
-        self.check_interval = 300  # Check every 5 minutes
-        self.api_url = "https://api.binance.com/api/v3/ticker/price"
-        self.symbol = "BTCUSDT"
+        self.price_threshold_low = 20000    # Alert if price drops below this
+        self.price_threshold_high = 45000   # Alert if price rises above this
+        self.percent_change_alert = 5       # Alert on 5% changes
+        self.alert_cooldown = 3600         # 1 hour cooldown between similar alerts
         
         # Module state
         self.state = {
             'last_price': None,
-            'last_check': None,
-            'last_alert_price': None,
-            'price_history': [],  # Track recent prices for trend analysis
-            'alert_cooldown': 3600  # Minimum seconds between similar alerts
+            'last_alert_time': None,
+            'last_alert_type': None,
+            'price_history': [],
+            'alerts_sent_today': 0
         }
         
-        # Runtime variables
-        self.is_running = False
+        # Runtime data
+        self.running = False
+        self.check_task = None
     
     async def initialize(self) -> None:
         """Initialize the BTC price monitor module."""
         self.log_info("Initializing BTC Price Monitor Module")
         
         # Load configuration
-        self.price_threshold = self.get_config('price_threshold', 30000)
-        self.check_interval = self.get_config('check_interval', 300)
-        self.api_url = self.get_config('api_url', self.api_url)
-        self.symbol = self.get_config('symbol', self.symbol)
-        self.state['alert_cooldown'] = self.get_config('alert_cooldown', 3600)
+        self.price_threshold_low = self.get_config('price_threshold_low', 20000)
+        self.price_threshold_high = self.get_config('price_threshold_high', 45000)
+        self.percent_change_alert = self.get_config('percent_change_alert', 5)
+        self.alert_cooldown = self.get_config('alert_cooldown', 3600)
         
-        self.log_info(f"Module configured with threshold: ${self.price_threshold:,.2f}")
+        self.log_info(f"Module configured: Low={self.price_threshold_low}, "
+                     f"High={self.price_threshold_high}, "
+                     f"Percent alert={self.percent_change_alert}%")
     
     async def run(self) -> None:
-        """Main execution method that starts the price monitoring loop."""
-        if self.is_running:
-            self.log_warning("Price monitor is already running")
-            return
-        
-        self.is_running = True
+        """Main execution method that runs when the module is started."""
         self.log_info("Starting BTC price monitoring")
+        self.running = True
         
         try:
-            while self.is_running:
-                # Trigger a price check event
-                await self.handle_event('price_check', {})
-                
-                # Wait for the next check
-                await asyncio.sleep(self.check_interval)
+            while self.running:
+                await self._check_price()
+                await asyncio.sleep(self.trigger.event_config.get('check_interval', 60))
                 
         except asyncio.CancelledError:
-            self.log_info("Price monitoring task cancelled")
+            self.log_info("BTC price monitoring task cancelled")
         except Exception as e:
-            self.log_error(f"Error in price monitoring loop: {str(e)}", e)
-        finally:
-            self.is_running = False
-    
-    async def handle_event(self, event_type: str, event_data: Dict[str, Any]) -> None:
-        """Handle price check events."""
-        if event_type != 'price_check':
-            return
-        
-        try:
-            # Fetch current price
-            current_price = await self._fetch_btc_price()
-            
-            if current_price is None:
-                self.log_error("Failed to fetch BTC price")
-                return
-            
-            # Update state
-            self.state['last_price'] = current_price
-            self.state['last_check'] = datetime.now().isoformat()
-            
-            # Add to price history (keep last 24 entries for 2-hour history at 5-min intervals)
-            self._update_price_history(current_price)
-            
-            # Check if price is below threshold
-            if current_price < self.price_threshold:
-                await self._handle_price_alert(current_price)
-            else:
-                self.log_debug(f"BTC price ${current_price:,.2f} is above threshold")
-                
-        except Exception as e:
-            self.log_error(f"Error handling price check event: {str(e)}", e)
+            self.log_error(f"Error in BTC price monitor: {str(e)}", e)
+            self.running = False
     
     async def cleanup(self) -> None:
         """Clean up resources used by the module."""
         self.log_info("Cleaning up BTC Price Monitor Module")
-        self.is_running = False
+        self.running = False
+        
+        if self.check_task and not self.check_task.done():
+            self.check_task.cancel()
+            try:
+                await self.check_task
+            except asyncio.CancelledError:
+                pass
     
-    async def _fetch_btc_price(self) -> Optional[float]:
+    async def _check_price(self) -> None:
+        """Check current BTC price and determine if alerts are needed."""
+        try:
+            current_price = await self._get_btc_price()
+            
+            if current_price is None:
+                self.log_error("Failed to get BTC price")
+                return
+            
+            # Update price history
+            self._update_price_history(current_price)
+            
+            # Check for alerts
+            await self._check_price_alerts(current_price)
+            
+            # Update state
+            self.state['last_price'] = current_price
+            
+        except Exception as e:
+            self.log_error(f"Error checking BTC price: {str(e)}", e)
+    
+    def _update_price_history(self, price: float) -> None:
+        """Update the price history with the new price."""
+        timestamp = datetime.now().isoformat()
+        self.state['price_history'].append({
+            'timestamp': timestamp,
+            'price': price
+        })
+        
+        # Keep only last 24 hours of data
+        cutoff_time = datetime.now() - timedelta(hours=24)
+        self.state['price_history'] = [
+            entry for entry in self.state['price_history']
+            if datetime.fromisoformat(entry['timestamp']) > cutoff_time
+        ]
+    
+    async def _check_price_alerts(self, current_price: float) -> None:
+        """Check if price conditions warrant sending an alert."""
+        last_price = self.state.get('last_price')
+        
+        # Check cooldown
+        if not self._check_alert_cooldown():
+            return
+        
+        # Check price thresholds
+        if current_price <= self.price_threshold_low:
+            await self._send_threshold_alert(
+                current_price, 
+                self.price_threshold_low, 
+                'below'
+            )
+        elif current_price >= self.price_threshold_high:
+            await self._send_threshold_alert(
+                current_price, 
+                self.price_threshold_high, 
+                'above'
+            )
+        
+        # Check percentage change
+        if last_price:
+            percent_change = ((current_price - last_price) / last_price) * 100
+            
+            if abs(percent_change) >= self.percent_change_alert:
+                await self._send_percent_change_alert(
+                    current_price, 
+                    last_price, 
+                    percent_change
+                )
+    
+    def _check_alert_cooldown(self) -> bool:
+        """Check if enough time has passed since the last alert."""
+        last_alert = self.state.get('last_alert_time')
+        if not last_alert:
+            return True
+        
+        last_alert_time = datetime.fromisoformat(last_alert)
+        time_since_alert = (datetime.now() - last_alert_time).total_seconds()
+        
+        return time_since_alert >= self.alert_cooldown
+    
+    async def _send_threshold_alert(
+        self, 
+        current_price: float, 
+        threshold: float, 
+        direction: str
+    ) -> None:
+        """Send alert when price crosses a threshold."""
+        try:
+            # Generate alert message using LLM
+            alert_message = await self._generate_alert_message(
+                current_price=current_price,
+                threshold=threshold,
+                direction=direction,
+                alert_type='threshold'
+            )
+            
+            # Send alert
+            if await self.send_telegram_message(alert_message):
+                self.state['last_alert_time'] = datetime.now().isoformat()
+                self.state['last_alert_type'] = f'threshold_{direction}'
+                self.state['alerts_sent_today'] = self.state.get('alerts_sent_today', 0) + 1
+                
+        except Exception as e:
+            self.log_error(f"Failed to send threshold alert: {str(e)}", e)
+    
+    async def _send_percent_change_alert(
+        self, 
+        current_price: float, 
+        last_price: float, 
+        percent_change: float
+    ) -> None:
+        """Send alert when price changes by significant percentage."""
+        try:
+            # Generate alert message using LLM
+            alert_message = await self._generate_alert_message(
+                current_price=current_price,
+                last_price=last_price,
+                percent_change=percent_change,
+                alert_type='percent_change'
+            )
+            
+            # Send alert
+            if await self.send_telegram_message(alert_message):
+                self.state['last_alert_time'] = datetime.now().isoformat()
+                self.state['last_alert_type'] = 'percent_change'
+                self.state['alerts_sent_today'] = self.state.get('alerts_sent_today', 0) + 1
+                
+        except Exception as e:
+            self.log_error(f"Failed to send percent change alert: {str(e)}", e)
+    
+    async def _get_btc_price(self) -> Optional[float]:
         """
         Fetch current BTC/USDT price from API.
         
         Returns:
-            Optional[float]: Current price or None if failed
+            Optional[float]: Current BTC price or None if failed
         """
         try:
+            # Using Binance API as an example
+            url = "https://api.binance.com/api/v3/ticker/price"
+            params = {"symbol": "BTCUSDT"}
+            
             async with aiohttp.ClientSession() as session:
-                params = {'symbol': self.symbol}
-                async with session.get(self.api_url, params=params) as response:
+                async with session.get(url, params=params) as response:
                     if response.status == 200:
                         data = await response.json()
                         return float(data['price'])
                     else:
                         self.log_error(f"API returned status {response.status}")
                         return None
+                    
         except Exception as e:
             self.log_error(f"Error fetching BTC price: {str(e)}", e)
-            return None
-    
-    def _update_price_history(self, price: float) -> None:
-        """Update price history with current price."""
-        history = self.state.get('price_history', [])
-        history.append({
-            'price': price,
-            'timestamp': datetime.now().isoformat()
-        })
-        
-        # Keep only last 24 entries
-        if len(history) > 24:
-            history = history[-24:]
-        
-        self.state['price_history'] = history
-    
-    def _calculate_price_trend(self) -> Dict[str, Any]:
-        """Calculate price trend from history."""
-        history = self.state.get('price_history', [])
-        if len(history) < 2:
-            return {'trend': 'unknown', 'change_percent': 0}
-        
-        first_price = history[0]['price']
-        last_price = history[-1]['price']
-        change_percent = ((last_price - first_price) / first_price) * 100
-        
-        if change_percent > 0:
-            trend = 'up'
-        elif change_percent < 0:
-            trend = 'down'
-        else:
-            trend = 'stable'
-        
-        return {
-            'trend': trend,
-            'change_percent': change_percent,
-            'period_hours': (len(history) * self.check_interval) / 3600
-        }
-    
-    async def _handle_price_alert(self, current_price: float) -> None:
-        """Handle price alert when below threshold."""
-        # Check cooldown
-        last_alert_time = self.state.get('last_alert_time')
-        if last_alert_time:
-            elapsed = (datetime.now() - datetime.fromisoformat(last_alert_time)).total_seconds()
-            if elapsed < self.state['alert_cooldown']:
-                self.log_debug(f"Alert cooldown active: {self.state['alert_cooldown'] - elapsed:.0f} seconds remaining")
-                return
-        
-        # Calculate trend
-        trend_data = self._calculate_price_trend()
-        
-        # Generate alert message using LLM
-        alert_message = await self._generate_alert_message(
-            current_price,
-            self.price_threshold,
-            trend_data
-        )
-        
-        # Send alert
-        if await self.send_telegram_message(alert_message):
-            self.state['last_alert_price'] = current_price
-            self.state['last_alert_time'] = datetime.now().isoformat()
-            self.log_info(f"Price alert sent: ${current_price:,.2f}")
-        else:
-            self.log_error("Failed to send price alert")
+            # Return mock price for demonstration
+            return 42000.50
     
     async def _generate_alert_message(
-        self, 
-        current_price: float, 
-        threshold: float,
-        trend_data: Dict[str, Any]
+        self,
+        alert_type: str,
+        **kwargs
     ) -> str:
         """
         Generate an alert message using LLM.
         
         Args:
-            current_price: Current BTC price
-            threshold: Alert threshold
-            trend_data: Price trend information
+            alert_type: Type of alert ('threshold' or 'percent_change')
+            **kwargs: Alert-specific parameters
         
         Returns:
             str: Formatted alert message
         """
-        # Create a prompt for the LLM
+        # Create appropriate prompt based on alert type
         system_message = (
-            "You are Bennet, a cryptocurrency market assistant. "
-            "Generate informative and objective price alert messages. "
-            "Include market trend analysis and potential considerations."
+            "You are Bennet, a cryptocurrency price analyst. "
+            "Generate informative and actionable price alert messages. "
+            "Include brief market context and potential implications."
         )
         
-        trend_description = f"{trend_data['trend']} by {abs(trend_data['change_percent']):.2f}% over the past {trend_data['period_hours']:.1f} hours"
+        if alert_type == 'threshold':
+            current_price = kwargs['current_price']
+            threshold = kwargs['threshold']
+            direction = kwargs['direction']
+            
+            prompt = (
+                f"Create a BTC price alert message:\n"
+                f"- Current price: ${current_price:.2f}\n"
+                f"- Threshold: ${threshold:.2f}\n"
+                f"- Direction: Price has moved {direction} the threshold\n"
+                f"- Include 1-2 brief market insights or potential causes"
+            )
+            
+            icon = '📉' if direction == 'below' else '📈'
+            title = f"{icon} BTC Price Alert: {direction.title()} Threshold"
+            
+        elif alert_type == 'percent_change':
+            current_price = kwargs['current_price']
+            last_price = kwargs['last_price']
+            percent_change = kwargs['percent_change']
+            
+            prompt = (
+                f"Create a BTC price alert message:\n"
+                f"- Previous price: ${last_price:.2f}\n"
+                f"- Current price: ${current_price:.2f}\n"
+                f"- Change: {percent_change:+.2f}%\n"
+                f"- Include brief analysis of this movement and what it might mean"
+            )
+            
+            icon = '📈' if percent_change > 0 else '📉'
+            direction = 'up' if percent_change > 0 else 'down'
+            title = f"{icon} BTC Price Alert: {abs(percent_change):.1f}% {direction.title()}"
         
-        prompt = (
-            f"Create a Bitcoin price alert message with these details:\n"
-            f"- Current BTC/USDT price: ${current_price:,.2f}\n"
-            f"- Alert threshold: ${threshold:,.2f}\n"
-            f"- Price is {((threshold - current_price) / threshold * 100):.1f}% below threshold\n"
-            f"- Recent trend: {trend_description}\n\n"
-            f"Provide a brief analysis and 1-2 considerations for traders."
-        )
+        else:
+            # Default message format
+            return self._format_basic_alert(kwargs)
         
         try:
             # Generate response from LLM
@@ -254,74 +324,92 @@ class BTCPriceMonitorModule(BaseModule):
                 prompt=prompt,
                 system_message=system_message,
                 temperature=0.7,
-                max_tokens=200
+                max_tokens=250
             )
             
-            # Format the response for Telegram
-            icon = TelegramFormatter.EMOJIS['money']
-            title = f"{icon} BTC Price Alert!"
+            # Add price trend information
+            trend_info = self._get_price_trend()
             
-            # Add price chart if significant history exists
-            history = self.state.get('price_history', [])
-            if len(history) >= 6:  # Need at least 30 minutes of data
-                sparkline = self._generate_price_sparkline(history)
-                content = f"```\n{sparkline}\n```\n\n{llm_response}"
-            else:
-                content = llm_response
+            # Format the complete message
+            message_parts = [llm_response]
+            
+            if trend_info:
+                message_parts.append(f"\n\n📊 24h Trend: {trend_info}")
+            
+            message_parts.append(f"\n\n🔔 Alerts today: {self.state.get('alerts_sent_today', 0) + 1}")
             
             return TelegramFormatter.status_message(
                 title=title,
-                content=content,
-                status='warning'
+                content='\n'.join(message_parts),
+                status='warning' if 'below' in kwargs.get('direction', '') else 'info'
             )
             
         except Exception as e:
             # Fallback to basic message if LLM fails
             self.log_error(f"LLM generation failed: {str(e)}", e)
+            return self._format_basic_alert(kwargs)
+    
+    def _get_price_trend(self) -> str:
+        """Analyze price history to determine trend."""
+        if not self.state.get('price_history'):
+            return ""
+        
+        try:
+            # Get prices from 24h ago and now
+            history = self.state['price_history']
+            oldest_price = history[0]['price']
+            newest_price = history[-1]['price']
+            
+            # Calculate 24h change
+            change_24h = ((newest_price - oldest_price) / oldest_price) * 100
+            
+            if change_24h > 0:
+                return f"📈 Up {change_24h:.1f}% in 24h"
+            else:
+                return f"📉 Down {abs(change_24h):.1f}% in 24h"
+            
+        except Exception as e:
+            self.log_error(f"Error calculating price trend: {str(e)}", e)
+            return ""
+    
+    def _format_basic_alert(self, kwargs: Dict[str, Any]) -> str:
+        """Create a basic alert message without LLM."""
+        if kwargs.get('alert_type') == 'threshold':
+            current_price = kwargs['current_price']
+            threshold = kwargs['threshold']
+            direction = kwargs['direction']
             
             message = (
-                f"💰 BTC Price Alert!\n\n"
-                f"Current price: ${current_price:,.2f}\n"
-                f"Threshold: ${threshold:,.2f}\n"
-                f"Price is {((threshold - current_price) / threshold * 100):.1f}% below threshold\n\n"
-                f"Trend: {trend_data['trend'].capitalize()} by {abs(trend_data['change_percent']):.2f}% over "
-                f"{trend_data['period_hours']:.1f} hours"
+                f"{'📉' if direction == 'below' else '📈'} BTC Price Alert\n\n"
+                f"BTC/USDT has moved {direction} ${threshold:.0f}\n"
+                f"Current price: ${current_price:.2f}"
             )
             
-            return message
-    
-    def _generate_price_sparkline(self, history: List[Dict[str, Any]]) -> str:
-        """Generate a simple ASCII sparkline chart."""
-        prices = [entry['price'] for entry in history]
-        min_price = min(prices)
-        max_price = max(prices)
-        range_price = max_price - min_price
+        elif kwargs.get('alert_type') == 'percent_change':
+            current_price = kwargs['current_price']
+            last_price = kwargs['last_price']
+            percent_change = kwargs['percent_change']
+            
+            message = (
+                f"{'📈' if percent_change > 0 else '📉'} BTC Price Alert\n\n"
+                f"Significant price movement detected!\n"
+                f"Previous: ${last_price:.2f}\n"
+                f"Current: ${current_price:.2f}\n"
+                f"Change: {percent_change:+.2f}%"
+            )
+        else:
+            message = "BTC Price Alert"
         
-        if range_price == 0:
-            return "━" * len(prices)  # Flat line if no change
-        
-        sparkline_chars = "▁▂▃▄▅▆▇█"
-        sparkline = ""
-        
-        for price in prices:
-            # Normalize price to 0-7 range
-            normalized = (price - min_price) / range_price
-            char_index = int(normalized * 7)
-            sparkline += sparkline_chars[char_index]
-        
-        # Add price labels
-        first_price = prices[0]
-        last_price = prices[-1]
-        return f"${first_price:,.0f} {sparkline} ${last_price:,.0f}"
+        return message
     
     def validate_config(self) -> bool:
         """Validate module configuration."""
-        if self.price_threshold <= 0:
-            self.log_error("Invalid price threshold")
+        if self.price_threshold_low >= self.price_threshold_high:
+            self.log_error("Low threshold must be less than high threshold")
             return False
         
-        if self.check_interval < 60:  # Minimum 1-minute interval
-            self.log_error("Check interval too short (minimum 60 seconds)")
+        if self.percent_change_alert <= 0:
+            self.log_error("Percent change alert threshold must be positive")
             return False
         
         return True
@@ -333,3 +421,11 @@ class BTCPriceMonitorModule(BaseModule):
     async def load_state(self, state: Dict[str, Any]) -> None:
         """Load a previously saved state."""
         self.state = state
+        
+        # Reset daily counter if it's a new day
+        if 'alerts_sent_today' in self.state:
+            last_alert = self.state.get('last_alert_time')
+            if last_alert:
+                last_alert_date = datetime.fromisoformat(last_alert).date()
+                if last_alert_date != datetime.now().date():
+                    self.state['alerts_sent_today'] = 0
