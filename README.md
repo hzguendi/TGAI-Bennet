@@ -25,7 +25,7 @@ TGAI-Bennet is a modular Telegram bot that connects to various LLM providers (Op
 
 1. Clone this repository:
    ```bash
-   git clone https://github.com/yourusername/TGAI-Bennet.git
+   git clone https://github.com/hzguendi/TGAI-Bennet.git
    cd TGAI-Bennet
    ```
 
