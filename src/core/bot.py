@@ -364,9 +364,13 @@ class TGAIBennet:
                 logger.error(f"Error handling message: {str(e)}")
                 # Fallback to simple completion without context if context-aware completion fails
                 try:
-                    # Create simple messages for LLM without history
+                    # Get global system message from chat history manager
+                    history_manager = await self.llm_client.get_chat_history_manager()
+                    system_message = await history_manager.get_system_message()
+                    
+                    # Create messages for LLM without history
                     messages = [
-                        {"role": "system", "content": "You are Bennet, a helpful AI assistant in a Telegram chat."},
+                        {"role": "system", "content": system_message},
                         {"role": "user", "content": user_message}
                     ]
                     

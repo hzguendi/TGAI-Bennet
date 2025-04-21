@@ -181,7 +181,7 @@ class BaseModule(ABC):
         
         Args:
             prompt: User prompt
-            system_message: System message to set context
+            system_message: Optional system message to override the global one (not recommended)
             model: Model to use (defaults to config setting)
             temperature: Temperature for response generation
             max_tokens: Maximum tokens in response
@@ -209,8 +209,19 @@ class BaseModule(ABC):
                 # Standard completion without history
                 messages = []
                 
+                # Only use explicit system_message if provided, otherwise let LLM client handle it
                 if system_message:
                     messages.append({"role": "system", "content": system_message})
+                else:
+                    # Get the global system message from chat history manager
+                    try:
+                        history_manager = await self.llm_client.get_chat_history_manager()
+                        global_system_message = await history_manager.get_system_message()
+                        messages.append({"role": "system", "content": global_system_message})
+                    except Exception as e:
+                        self.logger.warning(f"Unable to get global system message: {str(e)}")
+                        # Fallback to a simple system message
+                        messages.append({"role": "system", "content": "You are a helpful AI assistant called Bennet."})
                 
                 messages.append({"role": "user", "content": prompt})
                 

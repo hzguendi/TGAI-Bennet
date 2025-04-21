@@ -569,21 +569,14 @@ class ChatHistoryManager:
         Get the system message to use for conversations.
         
         Args:
-            module_name: Optional module name for module-specific instructions
+            module_name: Optional module name (no longer used for different messages)
             model_name: Optional model name to include in the system message
         
         Returns:
             str: System message for the LLM
         """
+        # Use the global system message only
         config_key = 'chat_history.system_message'
-        if module_name:
-            # Try module-specific system message first
-            module_config_key = f'modules.{module_name}.system_message'
-            system_message = self.config.get(module_config_key)
-            if system_message:
-                return system_message
-        
-        # Fall back to default system message
         system_message = self.config.get(config_key, "")
         
         if not system_message:
@@ -593,9 +586,6 @@ class ChatHistoryManager:
                 f"You are {app_name}, a helpful AI assistant in a Telegram chat. "
                 f"Be concise but informative."
             )
-            
-            if module_name:
-                system_message += f"\nYou are currently responding to a message from the {module_name} module."
             
             if model_name:
                 system_message += f"\nYou are running on the {model_name} model."

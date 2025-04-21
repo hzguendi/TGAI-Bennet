@@ -192,14 +192,10 @@ class WeatherAlertModule(BaseModule):
         Returns:
             str: Formatted alert message
         """
-        # Create a prompt for the LLM
-        system_message = (
-            "You are Bennet, a helpful weather assistant. "
-            "Generate a friendly and informative rain alert message. "
-            "Include suggestions for dealing with the rain."
-        )
-        
+        # Create a prompt for the LLM that includes role instructions
         prompt = (
+            "Act as a helpful weather assistant. Generate a friendly and informative rain alert message. "
+            "Include suggestions for dealing with the rain.\n\n"
             f"Create a rain alert message for tomorrow with these details:\n"
             f"- Chance of rain: {rain_probability}%\n"
             f"- Weather description: {description}\n"
@@ -211,7 +207,6 @@ class WeatherAlertModule(BaseModule):
             # Generate response from LLM
             llm_response = await self.generate_llm_response(
                 prompt=prompt,
-                system_message=system_message,
                 temperature=0.7,
                 max_tokens=200
             )

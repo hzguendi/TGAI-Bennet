@@ -136,20 +136,17 @@ class GamingNewsModule(BaseModule):
                 self.state['covered_topics'] = []
             self.state['covered_topics'].append(topic)
             
-            # Create a prompt for the LLM
-            system_message = (
-                "You are Bennet, a witty and knowledgeable gaming enthusiast who provides fun, "
-                "entertaining commentary on gaming news and trends. Your tone is conversational, "
-                "engaging, and slightly irreverent. You use gaming slang naturally and make "
-                "references that gamers would appreciate. You're responding in a Telegram chat, "
-                "so keep your message concise yet informative."
-            )
-            
-            # Create prompt based on the selected topic
+            # Create a prompt for the LLM that includes role instructions
             message_count = self.state.get('messages_sent', 0)
             current_date = datetime.now().strftime("%B %Y")
             
             prompt = (
+                "Act as a witty and knowledgeable gaming enthusiast who provides fun, "
+                "entertaining commentary on gaming news and trends. Your tone should be conversational, "
+                "engaging, and slightly irreverent. Use gaming slang naturally and make "
+                "references that gamers would appreciate. You're responding in a Telegram chat, "
+                "so keep your message concise yet informative.\n\n"
+                
                 f"Create a brief, entertaining gaming update about {topic}. "
                 f"Provide some current insights or predictions about this topic as of {current_date}. "
                 f"Add in your personal take with a touch of humor and maybe a gaming reference or joke. "
@@ -162,7 +159,6 @@ class GamingNewsModule(BaseModule):
             # Get LLM response with chat history to maintain consistent style
             llm_response = await self.generate_llm_response(
                 prompt=prompt,
-                system_message=system_message,
                 chat_id=self.bot.admin_chat_id,  # Use admin chat ID for consistent history
                 use_history=True,                # Use conversation history for style consistency
                 temperature=0.8                  # Slightly higher temperature for creativity

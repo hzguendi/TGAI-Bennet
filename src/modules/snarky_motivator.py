@@ -126,17 +126,18 @@ class SnarkyMotivatorModule(BaseModule):
         """
         try:
             # Create a prompt for the LLM - Enhanced with more context for variety and uncensored language
-            system_message = (
-                "You are a snarky, no-nonsense motivational coach with a colorful vocabulary. "
-                "You're encouraging but with attitude. You use explicit profanity for emphasis - use actual words like 'fuck', 'shit', 'ass' "
+            # Use prompt to provide context rather than system message
+            prompt = (
+                "Act as a snarky, no-nonsense motivational coach with a colorful vocabulary. "
+                "You're encouraging but with attitude. Use explicit profanity for emphasis - use actual words like 'fuck', 'shit', 'ass' "
                 "without censoring or using asterisks. Never censor your language - use the actual words. "
                 "You're not mean-spirited but you don't sugarcoat things. "
                 "Your goal is to motivate people to take action and stop procrastinating. "
                 "Create varied messages with different tones and approaches each time. "
                 "Sometimes focus on goals, sometimes on fears, sometimes on potential - be unpredictable. "
-                "Use plenty of colorful analogies and metaphors. Be memorable and don't hold back on the language."
-                "You can use quotes from time to time also"
-                "Be as random, funny, unexpected and creative as possible to avoid being repetitive."
+                "Use plenty of colorful analogies and metaphors. Be memorable and don't hold back on the language. "
+                "You can use quotes from time to time also. "
+                "Be as random, funny, unexpected and creative as possible to avoid being repetitive. "
             )
             
             # Tailor prompt based on time of day and previous messages
@@ -151,8 +152,8 @@ class SnarkyMotivatorModule(BaseModule):
             is_weekend = day_of_week in ["Saturday", "Sunday"]
             weekend_context = "weekend" if is_weekend else "workday"
             
-            prompt = (
-                f"Create a short, fun, snarky, motivational message with explicit profanity (use actual words like 'fuck', 'shit', 'ass' - "
+            prompt += (
+                f"\n\nCreate a short, fun, snarky, motivational message with explicit profanity (use actual words like 'fuck', 'shit', 'ass' - "
                 f"DO NOT censor with asterisks) to motivate someone to be productive. "
                 f"It's currently {time_context} on a {day_of_week} ({weekend_context}). "
                 f"This is message #{message_count + 1} they're receiving today. "
@@ -161,8 +162,8 @@ class SnarkyMotivatorModule(BaseModule):
                 f"Base your message on one of these themes: missed opportunities, future regrets, competition, "
                 f"self-respect, or the satisfaction of achievement. Choose a different theme than your previous messages. "
                 f"MOST IMPORTANT: Ensure you use UNCENSORED profanity - write 'fuck' not 'f*ck', 'ass' not 'a**', 'shit' not 'sh*t' - "
-                f"no censorship or asterisks in your language at all."
-                f"MOST IMPORTANT: you are not obligated to use all the context (time, day, message count...) use a random combination on none or all randomly to be more unpredictable"
+                f"no censorship or asterisks in your language at all. "
+                f"MOST IMPORTANT: you are not obligated to use all the context (time, day, message count...) use a random combination on none or all randomly to be more unpredictable. "
                 f"MOST IMPORTANT: just give the message, no quotes, no theme just the message itself"
             )
             
@@ -171,7 +172,6 @@ class SnarkyMotivatorModule(BaseModule):
             # Use the dedicated method for OpenAI format with chat history
             llm_response = await self.generate_llm_response(
                 prompt=prompt,
-                system_message=system_message,
                 chat_id=self.bot.admin_chat_id,  # Use admin chat ID for messages
                 use_history=True                 # Leverage conversation history
             )

@@ -274,11 +274,11 @@ class BTCPriceMonitorModule(BaseModule):
         Returns:
             str: Formatted alert message
         """
-        # Create appropriate prompt based on alert type
-        system_message = (
-            "You are Bennet, a cryptocurrency price analyst. "
+        # Create appropriate prompt based on alert type with role instructions included
+        role_instructions = (
+            "Act as a cryptocurrency price analyst. "
             "Generate informative and actionable price alert messages. "
-            "Include brief market context and potential implications."
+            "Include brief market context and potential implications.\n\n"
         )
         
         if alert_type == 'threshold':
@@ -287,6 +287,7 @@ class BTCPriceMonitorModule(BaseModule):
             direction = kwargs['direction']
             
             prompt = (
+                role_instructions +
                 f"Create a BTC price alert message:\n"
                 f"- Current price: ${current_price:.2f}\n"
                 f"- Threshold: ${threshold:.2f}\n"
@@ -303,6 +304,7 @@ class BTCPriceMonitorModule(BaseModule):
             percent_change = kwargs['percent_change']
             
             prompt = (
+                role_instructions +
                 f"Create a BTC price alert message:\n"
                 f"- Previous price: ${last_price:.2f}\n"
                 f"- Current price: ${current_price:.2f}\n"
@@ -322,7 +324,6 @@ class BTCPriceMonitorModule(BaseModule):
             # Generate response from LLM
             llm_response = await self.generate_llm_response(
                 prompt=prompt,
-                system_message=system_message,
                 temperature=0.7,
                 max_tokens=250
             )

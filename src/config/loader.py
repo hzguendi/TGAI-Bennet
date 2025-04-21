@@ -81,7 +81,7 @@ class ConfigLoader:
         env_mappings = {
             # LLM settings
             'OLLAMA_HOST': 'llm.providers.ollama.base_url',
-            'OLLAMA_MODEL': 'llm.providers.ollama.models.0',
+            'OLLAMA_MODEL': 'llm.default_model',  # Now properly maps to default_model
             
             # Service settings
             'LOG_LEVEL': 'logging.level',
@@ -91,7 +91,8 @@ class ConfigLoader:
             # API settings
             'MAX_RETRIES': 'module_defaults.api_settings.max_retries',
             'TIMEOUT_SECONDS': 'module_defaults.api_settings.timeout',
-            'RATE_LIMIT_REQUESTS': 'telegram.max_message_length',  # Using as a proxy
+            'RATE_LIMIT_REQUESTS': 'llm.rate_limit.requests',  # Proper mapping
+            'RATE_LIMIT_WINDOW': 'llm.rate_limit.window',  # Added rate limit window
             
             # Telegram settings
             'TELEGRAM_ADMIN_CHAT_ID': 'telegram.admin_chat_id'

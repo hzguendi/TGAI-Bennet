@@ -9,10 +9,10 @@ app:
 
 llm:
   default_provider: "ollama"  # Options: openai, openrouter, deepseek, ollama
-  default_model: "qwen2.5-coder:1.5b"      # Default model to use
+  # default_model comes from OLLAMA_MODEL environment variable
   temperature: 0.7            # LLM temperature setting (0-1)
   max_tokens: 2000           # Maximum tokens per response
-  system_message: "You are Bennet, a helpful AI assistant in a Telegram chat. You have a slightly snarky but friendly personality."
+  # system_message is defined in chat_history.system_message
   
   providers:
     openai:
@@ -38,7 +38,7 @@ llm:
         - "deepseek-coder"
     
     ollama:
-      base_url: "http://host.docker.internal:11434"
+      # base_url comes from OLLAMA_HOST environment variable
       models:
         - "qwen2.5-coder:1.5b"
         - "llama2"
@@ -64,7 +64,7 @@ modules:
   enabled: true
   directory: "src/modules"
   hot_reload: true          # Auto-detect and reload modules
-  scan_interval: 60         # Seconds between module directory scans
+  # scan_interval comes from MODULE_CHECK_INTERVAL environment variable
   
   GamingNewsModule:
     enabled: true
@@ -76,22 +76,16 @@ modules:
     path: "data/module_states.json"
   
   error_handling:
-    max_retries: 3
+    # max_retries comes from MAX_RETRIES environment variable
     retry_delay: 5          # Seconds between retries
     notify_on_error: true   # Send Telegram message on module errors
 
   SnarkyMotivatorModule:
     enabled: true
     interval_minutes: 600
-    system_message: |
-      You are Bennet, a snarky, no-nonsense motivational coach with a colorful vocabulary.
-      You're encouraging but with attitude. You use explicit profanity for emphasis without censoring.
-      You're not mean-spirited but you don't sugarcoat things.
-      Your goal is to motivate people to take action and stop procrastinating.
-      You're responding in a Telegram environment and your message will be sent directly to the user.
 
 logging:
-  level: "DEBUG"             # Options: DEBUG, INFO, WARNING, ERROR, CRITICAL
+  # level comes from LOG_LEVEL environment variable             # Options: DEBUG, INFO, WARNING, ERROR, CRITICAL
   format: "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
   
   file:
@@ -107,7 +101,7 @@ logging:
 
 health:
   enabled: true
-  interval: 300             # Seconds between health checks
+  # interval comes from HEALTH_CHECK_INTERVAL environment variable             # Seconds between health checks
   
   metrics:
     memory_threshold: 500   # MB, alert if exceeded
@@ -139,13 +133,14 @@ chat_history:
   
   # Global system message (can be overridden per module)
   system_message: |
-    You are Bennet, a helpful AI assistant in a Telegram chat environment. You're direct, slightly snarky, but always helpful.
+    You are Bennet, a helpful AI assistant in a Telegram chat environment. You're direct, slightly snarky, but always fun and helpful.
     Be concise in your responses as you're operating within Telegram's message constraints.
     Your responses should be informative, helpful, and reflect your friendly but no-nonsense personality.
     
     When responding, provide information that is appropriately detailed for the user's query.
     Try to answer directly without unnecessary hedging or disclaimers unless the topic truly calls for them.
     
+    When receiving the history of messages, some of them could be from other modules, so do not let them influence your responses.
     If you're being asked by a module in the system, know that your responses will be sent directly as a Telegram message.
 
 module_defaults:
@@ -158,6 +153,6 @@ module_defaults:
     retry_on_failure: true
     
   api_settings:
-    timeout: 30            # API call timeout in seconds
-    max_retries: 3
+    # timeout comes from TIMEOUT_SECONDS environment variable
+    # max_retries comes from MAX_RETRIES environment variable
     backoff_factor: 1.5    # Multiplier for exponential backoff
