@@ -226,6 +226,15 @@ class LLMClient:
             temperature = temperature or self.config.get('llm.temperature', 0.7)
             max_tokens = max_tokens or self.config.get('llm.max_tokens', 2000)
             
+            # Store the user message in history first - this ensures message order
+            await history_manager.add_message(
+                chat_id=chat_id,
+                role="user",
+                content=user_message,
+                model=model,
+                metadata={"module": module_name or "core"}
+            )
+            
             # Get appropriate system message
             system_message = await history_manager.get_system_message(module_name, model)
             
@@ -236,8 +245,10 @@ class LLMClient:
                 model=model
             )
             
-            # Add the current user message
-            messages.append({"role": "user", "content": user_message})
+            # Add the current user message to the context for the LLM
+            # (It's already in the database, but might not be in the context yet)
+            if not any(msg.get("role") == "user" and msg.get("content") == user_message for msg in messages):
+                messages.append({"role": "user", "content": user_message})
             
             # Log the complete request in debug mode
             self._log_request_debug(
@@ -263,19 +274,17 @@ class LLMClient:
             
             # If not streaming, store the assistant's response in history
             if not stream:
-                await history_manager.add_message(
-                    chat_id=chat_id,
-                    role="user",
-                    content=user_message,
-                    model=model
-                )
-                
+                # Store the assistant's response with an explicit await
                 await history_manager.add_message(
                     chat_id=chat_id,
                     role="assistant",
                     content=response.content,
-                    model=model
+                    model=model,
+                    metadata={"module": module_name or "core"}
                 )
+                
+                # Log success of storing both messages
+                logger.debug(f"Successfully stored user and assistant messages for chat {chat_id}")
             
             return response
             
@@ -299,7 +308,7 @@ class LLMClient:
                 **kwargs
             )
             
-            return await self.chat_completion(
+            response = await self.chat_completion(
                 messages=messages,
                 model=model,
                 temperature=temperature,
@@ -307,6 +316,33 @@ class LLMClient:
                 stream=stream,
                 **kwargs
             )
+            
+            # Even in fallback mode, try to store both messages
+            try:
+                history_manager = await self.get_chat_history_manager()
+                
+                # Store user message
+                await history_manager.add_message(
+                    chat_id=chat_id,
+                    role="user",
+                    content=user_message,
+                    model=model,
+                    metadata={"fallback": True}
+                )
+                
+                # Store assistant message
+                if not stream:
+                    await history_manager.add_message(
+                        chat_id=chat_id,
+                        role="assistant",
+                        content=response.content,
+                        model=model,
+                        metadata={"fallback": True}
+                    )
+            except Exception as store_error:
+                logger.error(f"Failed to store fallback messages: {str(store_error)}")
+            
+            return response
     
     async def chat_completion(
         self,

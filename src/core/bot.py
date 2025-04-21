@@ -321,69 +321,79 @@ class TGAIBennet:
         user_message = update.message.text
         chat_id = update.effective_chat.id
         
-        try:
-            # Show typing indicator
-            await update.message.chat.send_action(constants.ChatAction.TYPING)
-            
-            # Get context-aware LLM response using chat history
-            response = await self.llm_client.get_context_aware_completion(
-                chat_id=chat_id,
-                user_message=user_message,
-                module_name="telegram_bot"
-            )
-            
-            # Format and send response
-            formatted_response = response.content
-            
-            # Split long messages if needed
-            max_length = self.config.get('telegram.max_message_length', 4096)
-            if len(formatted_response) > max_length:
-                parts = TelegramFormatter.split_long_message(formatted_response)
-                for part in parts:
+        # Create a lock based on chat_id to prevent race conditions
+        lock_key = f"chat_lock_{chat_id}"
+        if not hasattr(self, "_chat_locks"):
+            self._chat_locks = {}
+        
+        if lock_key not in self._chat_locks:
+            self._chat_locks[lock_key] = asyncio.Lock()
+        
+        # Acquire lock for this chat to prevent race conditions when processing messages
+        async with self._chat_locks[lock_key]:
+            try:
+                # Show typing indicator
+                await update.message.chat.send_action(constants.ChatAction.TYPING)
+                
+                # Get context-aware LLM response using chat history
+                response = await self.llm_client.get_context_aware_completion(
+                    chat_id=chat_id,
+                    user_message=user_message,
+                    module_name="telegram_bot"
+                )
+                
+                # Format and send response
+                formatted_response = response.content
+                
+                # Split long messages if needed
+                max_length = self.config.get('telegram.max_message_length', 4096)
+                if len(formatted_response) > max_length:
+                    parts = TelegramFormatter.split_long_message(formatted_response)
+                    for part in parts:
+                        await update.message.reply_text(
+                            part,
+                            parse_mode=self.config.get('telegram.parse_mode', 'Markdown')
+                        )
+                else:
                     await update.message.reply_text(
-                        part,
+                        formatted_response,
                         parse_mode=self.config.get('telegram.parse_mode', 'Markdown')
                     )
-            else:
-                await update.message.reply_text(
-                    formatted_response,
-                    parse_mode=self.config.get('telegram.parse_mode', 'Markdown')
-                )
-        
-        except Exception as e:
-            logger.error(f"Error handling message: {str(e)}")
-            # Fallback to simple completion without context if context-aware completion fails
-            try:
-                # Create simple messages for LLM without history
-                messages = [
-                    {"role": "system", "content": "You are Bennet, a helpful AI assistant in a Telegram chat."},
-                    {"role": "user", "content": user_message}
-                ]
-                
-                # Get LLM response
-                fallback_response = await self.llm_client.chat_completion(messages)
-                
-                # Send fallback response
-                await update.message.reply_text(
-                    fallback_response.content,
-                    parse_mode=self.config.get('telegram.parse_mode', 'Markdown')
-                )
-                
-                logger.info("Successfully sent fallback response without chat history context")
-                
-            except Exception as fallback_error:
-                # If even the fallback fails, send an error message
-                logger.error(f"Fallback response also failed: {str(fallback_error)}")
-                error_message = TelegramFormatter.error_message(
-                    "Message Handling Error",
-                    e,
-                    details={'message': user_message[:50] + '...' if len(user_message) > 50 else user_message}
-                )
-                
-                await update.message.reply_text(
-                    error_message,
-                    parse_mode=self.config.get('telegram.parse_mode', 'Markdown')
-                )
+            
+            except Exception as e:
+                logger.error(f"Error handling message: {str(e)}")
+                # Fallback to simple completion without context if context-aware completion fails
+                try:
+                    # Create simple messages for LLM without history
+                    messages = [
+                        {"role": "system", "content": "You are Bennet, a helpful AI assistant in a Telegram chat."},
+                        {"role": "user", "content": user_message}
+                    ]
+                    
+                    # Get LLM response
+                    fallback_response = await self.llm_client.chat_completion(messages)
+                    
+                    # Send fallback response
+                    await update.message.reply_text(
+                        fallback_response.content,
+                        parse_mode=self.config.get('telegram.parse_mode', 'Markdown')
+                    )
+                    
+                    logger.info("Successfully sent fallback response without chat history context")
+                    
+                except Exception as fallback_error:
+                    # If even the fallback fails, send an error message
+                    logger.error(f"Fallback response also failed: {str(fallback_error)}")
+                    error_message = TelegramFormatter.error_message(
+                        "Message Handling Error",
+                        e,
+                        details={'message': user_message[:50] + '...' if len(user_message) > 50 else user_message}
+                    )
+                    
+                    await update.message.reply_text(
+                        error_message,
+                        parse_mode=self.config.get('telegram.parse_mode', 'Markdown')
+                    )
     
     async def _error_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle errors in the bot."""
